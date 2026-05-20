@@ -64,22 +64,29 @@ def _backfill_tenant_slugs() -> None:
 @app.on_event("startup")
 async def startup() -> None:
     Base.metadata.create_all(bind=engine)
-    configurar_sqlite_wal()  # SDD §3.6
-    _backfill_tenant_slugs()
     
-    # Backup inmediato al arrancar
-    logger.info("Ejecutando backup inicial...")
-    ejecutar_ciclo_backup()
+    is_sqlite = "sqlite" in str(engine.url)
     
-    # Scheduler diario a las 3 AM UTC
-    # (10 PM Colombia)
-    asyncio.create_task(
-        scheduler_diario(
-            hora_utc=3,
-            tarea=ejecutar_ciclo_backup,
-            nombre="backup_diario"
+    if is_sqlite:
+        configurar_sqlite_wal()  # SDD §3.6
+        _backfill_tenant_slugs()
+        
+        # Backup inmediato al arrancar (solo SQLite)
+        logger.info("Ejecutando backup inicial...")
+        ejecutar_ciclo_backup()
+        
+        # Scheduler diario a las 3 AM UTC
+        asyncio.create_task(
+            scheduler_diario(
+                hora_utc=3,
+                tarea=ejecutar_ciclo_backup,
+                nombre="backup_diario"
+            )
         )
-    )
+    else:
+        # PostgreSQL: crear tablas, sin backup SQLite
+        logger.info("PostgreSQL detectado, saltando backup SQLite")
+        _backfill_tenant_slugs()
 
 
 @app.get("/health")

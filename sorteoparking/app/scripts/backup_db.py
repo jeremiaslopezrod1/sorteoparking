@@ -8,11 +8,19 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/data/backups"))
-DB_PATH = Path(os.getenv("DATABASE_URL", 
-    "sqlite:///./sorteoparking.db")
-    .replace("sqlite:///", ""))
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///./sorteoparking.db")
 RETENTION_DAYS = int(os.getenv(
     "BACKUP_RETENTION_DAYS", "30"))
+
+
+def _es_sqlite() -> bool:
+    return "sqlite" in DB_URL.lower()
+
+
+def _get_db_path() -> Path | None:
+    if not _es_sqlite():
+        return None
+    return Path(DB_URL.replace("sqlite:///", ""))
 
 def hacer_backup() -> Path:
     """
