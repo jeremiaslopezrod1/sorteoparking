@@ -52,7 +52,15 @@ class SessionStore:
 
     def _init_db(self):
         """Inicializa la base de datos de sesiones."""
-        _db_dir = os.path.dirname(os.path.abspath(__file__))
+        # Render: /data/ persiste entre deploys (si existe disco).
+        # Fallback a directorio de la app + env var ADMIN_SESSIONS_PATH.
+        _db_dir = os.environ.get("ADMIN_SESSIONS_DIR", "")
+        if _db_dir and os.path.isdir(_db_dir):
+            pass
+        elif os.path.isdir("/data"):
+            _db_dir = "/data"
+        else:
+            _db_dir = os.path.dirname(os.path.abspath(__file__))
         _admin_db_path = os.path.join(_db_dir, "admin_sessions.db")
         self._engine = create_engine(
             f"sqlite:///{_admin_db_path}",

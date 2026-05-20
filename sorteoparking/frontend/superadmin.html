@@ -282,6 +282,7 @@
     async function loadMetrics() {
       try {
         const res = await fetch('/admin/metricas', { credentials: 'include' });
+        if (res.status === 403 || res.status === 401) { showLogin(); return; }
         if (!res.ok) return;
         const m = await res.json();
         const container = document.getElementById('metricas');
@@ -299,6 +300,7 @@
     async function loadTenants() {
       try {
         const res = await fetch('/admin/tenants', { credentials: 'include' });
+        if (res.status === 403 || res.status === 401) { showLogin(); return; }
         if (!res.ok) return;
         const tenants = await res.json();
         const rows = document.getElementById('tenants-rows');
@@ -340,11 +342,25 @@
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') || '' },
           body: JSON.stringify({ estado }),
         });
-        if (!res.ok) { alert('Error al cambiar estado'); loadTenants(); }
+        if (!res.ok) { 
+          if (res.status === 403 || res.status === 401) { showLogin(); return; }
+          alert('Error al cambiar estado'); loadTenants(); 
+        }
       } catch(e) { alert('Error de conexión'); }
     }
 
     function getCookie(n) { const v = document.cookie.split('; ').find(r => r.startsWith(n + '=')); return v ? v.split('=')[1] : null; }
+
+    // Helper: handle auth errors by redirecting to login
+    function handleAuthError(res, data) {
+      if (res.status === 403 || res.status === 401) {
+        document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        showLogin();
+        return true;
+      }
+      return false;
+    }
 
     // Create tenant
     document.getElementById('create-tenant-form').addEventListener('submit', async (e) => {
@@ -369,7 +385,9 @@
           loadMetrics();
           document.getElementById('create-tenant-form').reset();
         } else {
-          alert('Error: ' + (data.detail || JSON.stringify(data)));
+          if (!handleAuthError(res, data)) {
+            alert('Error: ' + (data.detail || JSON.stringify(data)));
+          }
         }
       } catch(e) { alert('Error de conexión: ' + e.message); }
     });
