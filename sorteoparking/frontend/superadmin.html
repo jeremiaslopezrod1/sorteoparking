@@ -282,7 +282,6 @@
     async function loadMetrics() {
       try {
         const res = await fetch('/admin/metricas', { credentials: 'include' });
-        if (res.status === 403 || res.status === 401) { showLogin(); return; }
         if (!res.ok) return;
         const m = await res.json();
         const container = document.getElementById('metricas');
@@ -300,7 +299,6 @@
     async function loadTenants() {
       try {
         const res = await fetch('/admin/tenants', { credentials: 'include' });
-        if (res.status === 403 || res.status === 401) { showLogin(); return; }
         if (!res.ok) return;
         const tenants = await res.json();
         const rows = document.getElementById('tenants-rows');

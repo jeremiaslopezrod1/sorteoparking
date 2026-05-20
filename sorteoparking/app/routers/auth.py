@@ -99,3 +99,12 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     # Asegurar que el objeto Response tiene un código HTTP válido
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(response: Response):
+    """Cierra la sesión del superadmin."""
+    response.delete_cookie(key="admin_session", path="/")
+    response.delete_cookie(key="csrf_token", path="/")
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response

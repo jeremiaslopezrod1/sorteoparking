@@ -3,7 +3,6 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.security import get_auth_context
 from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal
@@ -26,10 +25,6 @@ app = FastAPI(title="SorteoParking")
 app.state.limiter = auth.limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ProxyHeadersMiddleware: confía en X-Forwarded-* de Render (necesario para HTTPS y IP real)
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
-
-# Agregar después de crear la app FastAPI
 app.add_middleware(SecurityHeadersMiddleware)
 
 
