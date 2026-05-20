@@ -1,11 +1,11 @@
-fastapi
-uvicorn[standard]
+﻿fastapi
+uvicorn
 sqlalchemy
 openpyxl
 python-multipart
-argon2-cffi-binary
+argon2-cffi
 slowapi
 python-dotenv
 pandas
 python-docx
-psycopg2-binary>=2.9.9
+psycopg2-binary
