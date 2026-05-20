@@ -30,10 +30,14 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=4, max_length=50)
     password: SecretStr
 
-@router.post("/login/superadmin", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/login/superadmin", status_code=status.HTTP_200_OK)
 @limiter.limit("5/15minutes")
 async def login_superadmin(request: Request, response: Response, payload: LoginRequest):
-    """Endpoint de login seguro para SUPER_ADMIN (SDD §13)."""
+    """Endpoint de login seguro para SUPER_ADMIN (SDD §13).
+
+    Devuelve 200 OK con JSON (NO 204) porque proxies como Render y algunos
+    navegadores ignoran Set-Cookie en respuestas sin body, rompiendo la sesion.
+    """
     
     # 1. Leer credenciales desde variables de entorno
     stored_user = super_admin_config.super_admin_user
@@ -64,16 +68,30 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         )
 
     # Detectar si estamos en local para permitir cookies sin HTTPS
-    is_secure = request.url.scheme == "https"
+    # Detras de proxy (Render): usar X-Forwarded-Proto para deteccion correcta
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+    is_secure = (request.url.scheme == "https") or (forwarded_proto == "https")
     
     # 5. Éxito: generar tokens de sesión y CSRF
     session_id = secrets.token_urlsafe(32)
     csrf_token = secrets.token_urlsafe(32)
 
-    # Guardar en almacen de sesiones (session_id -> TOKEN)
-    session_store.create_session(session_id, stored_token)
+    # Guardar en almacen de sesiones (session_id -> TOKEN + CSRF)
+    session_store.create_session(session_id, stored_token, csrf_token)
 
-    # 6. Configurar cookies
+    # 6. Limpiar cookies viejas con paths antiguos (evita conflicto CSRF)
+    # IMPORTANTE: delete_cookie debe coincidir secure/samesite con la cookie original
+    for old_path in ("/admin", "/"):
+        response.delete_cookie(
+            key="admin_session", path=old_path,
+            secure=is_secure, samesite="strict"
+        )
+        response.delete_cookie(
+            key="csrf_token", path=old_path,
+            secure=is_secure, samesite="strict"
+        )
+
+    # 7. Configurar cookies
     # admin_session: HttpOnly, SameSite=strict
     response.set_cookie(
         key="admin_session",
@@ -81,8 +99,8 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         httponly=True,
         secure=is_secure,
         samesite="strict",
-        max_age=1800, # 30 minutos
-        path="/" # Ampliado a raíz para mayor compatibilidad
+        max_age=3600, # 60 minutos
+        path="/"
     )
     
     # csrf_token: Visible al cliente para incluir en headers
@@ -92,19 +110,31 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         httponly=False,
         secure=is_secure,
         samesite="strict",
-        max_age=1800,
+        max_age=3600,
         path="/"
     )
 
-    # Asegurar que el objeto Response tiene un código HTTP válido
-    response.status_code = status.HTTP_204_NO_CONTENT
-    return response
+    # 8. Devolver 200 OK con JSON (NO 204 — Set-Cookie se pierde en 204 con proxies)
+    # Incluir csrf_token en el body como fallback si la cookie no es accesible via JS
+    return {
+        "ok": True,
+        "csrf_token": csrf_token,
+        "expires_in": 3600
+    }
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response):
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(request: Request, response: Response):
     """Cierra la sesión del superadmin."""
-    response.delete_cookie(key="admin_session", path="/")
-    response.delete_cookie(key="csrf_token", path="/")
-    response.status_code = status.HTTP_204_NO_CONTENT
-    return response
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+    is_secure = (request.url.scheme == "https") or (forwarded_proto == "https")
+    for old_path in ("/admin", "/"):
+        response.delete_cookie(
+            key="admin_session", path=old_path,
+            secure=is_secure, samesite="strict"
+        )
+        response.delete_cookie(
+            key="csrf_token", path=old_path,
+            secure=is_secure, samesite="strict"
+        )
+    return {"ok": True, "message": "Sesion cerrada"}

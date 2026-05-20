@@ -206,7 +206,14 @@
   </main>
 
   <script>
-    function getCookie(n) { const v = document.cookie.split('; ').find(r => r.startsWith(n + '=')); return v ? v.split('=')[1] : null; }
+    function getCookie(n) {
+      const cookies = document.cookie.split(';');
+      for (let c of cookies) {
+        const [key, ...val] = c.trim().split('=');
+        if (key === n) return val.join('=');
+      }
+      return null;
+    }
 
     // Auto-fill UUID from URL hash (#uuid=xxx)
     (function() {

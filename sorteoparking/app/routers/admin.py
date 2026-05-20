@@ -24,35 +24,48 @@ def _super_admin_bearer(request: Request):
             raise HTTPException(status_code=500, detail="SUPER_ADMIN_TOKEN no configurado")
         if hmac.compare_digest(token, super_admin_config.super_admin_token):
             return token
-        raise HTTPException(status_code=403, detail="Token de SUPER_ADMIN invalido")
+        raise HTTPException(status_code=403, detail="[A0] Token Bearer invalido")
 
     # 2. Intentar sesion por cookie admin_session (para frontend)
     session_id = request.cookies.get("admin_session")
-    if session_id:
-        from app.core.session_store import session_store
-        token_hash = session_store.get_session(session_id)
-        if token_hash and super_admin_config.super_admin_token:
-            expected_hash = hashlib.sha256(
-                super_admin_config.super_admin_token.encode("utf-8")
-            ).hexdigest()
-            if hmac.compare_digest(token_hash, expected_hash):
-                # CSRF validation for mutating requests
-                if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-                    csrf_cookie = request.cookies.get("csrf_token")
-                    csrf_header = request.headers.get("X-CSRF-Token")
-                    if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
-                        raise HTTPException(
-                            status_code=403,
-                            detail="Validacion CSRF fallida",
-                        )
-                return super_admin_config.super_admin_token
+    if not session_id:
+        raise HTTPException(status_code=403, detail="[A1] Sin cookie admin_session")
+
+    from app.core.session_store import session_store
+    token_hash = session_store.get_session(session_id)
+    if not token_hash:
         raise HTTPException(
             status_code=403,
-            detail="Sesion expirada o invalida. Inicie sesion nuevamente."
+            detail="[A2] Sesion no encontrada en BD (expiro o no se creo). Vuelva a iniciar sesion."
         )
 
-    # 3. Sin credencial
-    raise HTTPException(status_code=403, detail="Acceso denegado: se requiere token Bearer o sesion activa")
+    if not super_admin_config.super_admin_token:
+        raise HTTPException(status_code=500, detail="[A3] SUPER_ADMIN_TOKEN no configurado en servidor")
+
+    expected_hash = hashlib.sha256(
+        super_admin_config.super_admin_token.encode("utf-8")
+    ).hexdigest()
+    if not hmac.compare_digest(token_hash, expected_hash):
+        raise HTTPException(
+            status_code=403,
+            detail="[A4] Token hash no coincide (cambio SUPER_ADMIN_TOKEN?). Vuelva a iniciar sesion."
+        )
+
+    # CSRF validation for mutating requests — validado contra BD, no contra cookie
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        csrf_header = request.headers.get("X-CSRF-Token")
+        if not csrf_header:
+            raise HTTPException(
+                status_code=403,
+                detail="[A6] Falta header X-CSRF-Token. El JS no envio el token (getCookie fallo?)."
+            )
+        if not session_store.validate_csrf(session_id, csrf_header):
+            raise HTTPException(
+                status_code=403,
+                detail=f"[A7] CSRF invalido (validado contra BD). header={csrf_header[:8]}... Vuelva a iniciar sesion."
+            )
+
+    return super_admin_config.super_admin_token
 
 
 router = APIRouter(

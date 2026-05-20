@@ -230,8 +230,13 @@
 
   <script>
     let token = null;
+    let _csrfToken = null;  // CSRF cache (del body del login o de cookie)
 
-    function showLogin() { document.getElementById('login-view').style.display = 'block'; document.getElementById('dashboard-view').style.display = 'none'; }
+    function showLogin() {
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('dashboard-view').style.display = 'none';
+      _csrfToken = null;
+    }
     function showDashboard() {
       document.getElementById('login-view').style.display = 'none';
       document.getElementById('dashboard-view').style.display = 'block';
@@ -258,6 +263,15 @@
           body: JSON.stringify({ username: user, password: pass }),
         });
         if (res.ok) {
+          // Guardar CSRF token del body como fallback (si la cookie no es legible via JS)
+          try {
+            const data = await res.json();
+            if (data.csrf_token) {
+              _csrfToken = data.csrf_token;
+              // Tambien guardar en sessionStorage para persistencia entre recargas
+              try { sessionStorage.setItem('csrf_token', data.csrf_token); } catch(e) {}
+            }
+          } catch(e) { /* si el body no es JSON, usar cookie */ }
           errEl.classList.remove('visible');
           showDashboard();
         } else {
@@ -270,11 +284,28 @@
       document.getElementById('login-btn').disabled = false;
     });
 
+    /** Obtiene el CSRF token: cookie > cache del login > sessionStorage */
+    function getCsrfToken() {
+      // 1. Intentar desde cookie (funciona si el navegador acepto Set-Cookie)
+      const fromCookie = getCookie('csrf_token');
+      if (fromCookie) return fromCookie;
+      // 2. Cache en memoria del ultimo login exitoso
+      if (_csrfToken) return _csrfToken;
+      // 3. sessionStorage (sobrevive recargas de pagina)
+      try {
+        const stored = sessionStorage.getItem('csrf_token');
+        if (stored) { _csrfToken = stored; return stored; }
+      } catch(e) {}
+      return '';
+    }
+
     // Logout
     document.getElementById('logout-btn').addEventListener('click', () => {
       fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
       document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
       document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      _csrfToken = null;
+      try { sessionStorage.removeItem('csrf_token'); } catch(e) {}
       showLogin();
     });
 
@@ -337,7 +368,7 @@
       try {
         const res = await fetch('/admin/tenants/' + id + '/estado', {
           method: 'PATCH', credentials: 'include',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') || '' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           body: JSON.stringify({ estado }),
         });
         if (!res.ok) { 
@@ -347,13 +378,24 @@
       } catch(e) { alert('Error de conexión'); }
     }
 
-    function getCookie(n) { const v = document.cookie.split('; ').find(r => r.startsWith(n + '=')); return v ? v.split('=')[1] : null; }
+    function getCookie(n) {
+      const cookies = document.cookie.split(';');
+      for (let c of cookies) {
+        const [key, ...val] = c.trim().split('=');
+        if (key === n) return val.join('=');
+      }
+      return null;
+    }
 
     // Helper: handle auth errors by redirecting to login
     function handleAuthError(res, data) {
       if (res.status === 403 || res.status === 401) {
+        const detail = (data && data.detail) ? data.detail : 'sin detalle';
+        alert('⚠️ Error de autenticacion (' + res.status + '): ' + detail + '\n\nSe redirigira al inicio de sesion.');
         document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
         document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        _csrfToken = null;
+        try { sessionStorage.removeItem('csrf_token'); } catch(e) {}
         showLogin();
         return true;
       }
@@ -373,7 +415,7 @@
       try {
         const res = await fetch('/admin/tenants', {
           method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') || '' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           body: JSON.stringify(body),
         });
         const data = await res.json();
@@ -396,7 +438,7 @@
       out.textContent = 'Ejecutando backup...';
       try {
         const res = await fetch('/admin/backup', { method: 'POST', credentials: 'include',
-          headers: { 'X-CSRF-Token': getCookie('csrf_token') || '' } });
+          headers: { 'X-CSRF-Token': getCsrfToken() } });
         const data = await res.json();
         out.textContent = res.ok ? 'Backup exitoso: ' + JSON.stringify(data) : 'Error: ' + JSON.stringify(data);
       } catch(e) { out.textContent = 'Error de red: ' + e.message; }

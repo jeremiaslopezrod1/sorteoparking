@@ -5,6 +5,7 @@ Esto permite que los reinicios de Railway no invaliden sesiones activas.
 """
 
 import hashlib
+import hmac
 import logging
 import os
 import threading
@@ -81,10 +82,12 @@ class SessionStore:
         finally:
             db.close()
 
-    def create_session(self, session_id: str, token: str) -> None:
+    def create_session(self, session_id: str, token: str, csrf_token: str = "") -> None:
         """Asocia un ID de sesion con un SUPER_ADMIN_TOKEN."""
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        csrf_token = token_hash[:32]
+        # Si no se pasa csrf_token, usar token_hash[:32] como fallback
+        if not csrf_token:
+            csrf_token = token_hash[:32]
 
         db = next(self._get_db())
         try:
@@ -97,11 +100,11 @@ class SessionStore:
                 session_id=session_id,
                 token_hash=token_hash,
                 csrf_token=csrf_token,
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=60),
             )
             db.add(ses)
             db.commit()
-            logger.info("Sesion creada: %s (expira en 30 min)", session_id[:8])
+            logger.info("Sesion creada: %s (expira en 60 min)", session_id[:8])
         except Exception as e:
             db.rollback()
             logger.error("Error creando sesion: %s", e)
@@ -109,7 +112,7 @@ class SessionStore:
             db.close()
 
     def get_session(self, session_id: str) -> Optional[str]:
-        """Recupera el token asociado a una sesion."""
+        """Recupera el token_hash asociado a una sesion."""
         db = next(self._get_db())
         try:
             ses = db.query(AdminSession).filter(
@@ -123,6 +126,26 @@ class SessionStore:
         except Exception as e:
             logger.error("Error leyendo sesion: %s", e)
             return None
+        finally:
+            db.close()
+
+    def validate_csrf(self, session_id: str, csrf_header: str) -> bool:
+        """Valida el token CSRF contra el almacenado en BD."""
+        if not csrf_header:
+            return False
+        db = next(self._get_db())
+        try:
+            ses = db.query(AdminSession).filter(
+                AdminSession.session_id == session_id,
+                AdminSession.revoked_at.is_(None),
+                AdminSession.expires_at > datetime.now(timezone.utc),
+            ).first()
+            if ses:
+                return hmac.compare_digest(ses.csrf_token, csrf_header)
+            return False
+        except Exception as e:
+            logger.error("Error validando CSRF: %s", e)
+            return False
         finally:
             db.close()
 
