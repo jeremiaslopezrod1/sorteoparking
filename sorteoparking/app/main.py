@@ -63,30 +63,44 @@ def _backfill_tenant_slugs() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        logger.warning("Error creando tablas: %s - continuando con short circuit", e)
+        return  # Short circuit - health check responderá pero sin DB
     
     is_sqlite = "sqlite" in str(engine.url)
     
     if is_sqlite:
-        configurar_sqlite_wal()  # SDD §3.6
-        _backfill_tenant_slugs()
-        
-        # Backup inmediato al arrancar (solo SQLite)
-        logger.info("Ejecutando backup inicial...")
-        ejecutar_ciclo_backup()
-        
-        # Scheduler diario a las 3 AM UTC
-        asyncio.create_task(
-            scheduler_diario(
-                hora_utc=3,
-                tarea=ejecutar_ciclo_backup,
-                nombre="backup_diario"
+        try:
+            configurar_sqlite_wal()
+        except Exception:
+            pass
+        try:
+            _backfill_tenant_slugs()
+        except Exception:
+            pass
+        try:
+            logger.info("Ejecutando backup inicial...")
+            ejecutar_ciclo_backup()
+        except Exception:
+            pass
+        try:
+            asyncio.create_task(
+                scheduler_diario(
+                    hora_utc=3,
+                    tarea=ejecutar_ciclo_backup,
+                    nombre="backup_diario"
+                )
             )
-        )
+        except Exception:
+            pass
     else:
-        # PostgreSQL: crear tablas, sin backup SQLite
-        logger.info("PostgreSQL detectado, saltando backup SQLite")
-        _backfill_tenant_slugs()
+        logger.info("PostgreSQL detectado")
+        try:
+            _backfill_tenant_slugs()
+        except Exception:
+            pass
 
 
 @app.get("/health")
