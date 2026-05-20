@@ -5,6 +5,7 @@ services:
     region: ohio
     plan: free
     branch: main
+    rootDir: sorteoparking
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -12,7 +13,7 @@ services:
       - key: APP_ENV
         value: production
       - key: PUBLIC_BASE_URL
-        value: https://sorteoparking.onrender.com
+        sync: false
       - key: SUPER_ADMIN_USER
         value: Michael
       - key: SUPER_ADMIN_PASSWORD_HASH
