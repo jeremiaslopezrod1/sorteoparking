@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resultados SorteoParking</title>
+  <link rel="stylesheet" href="/static/global.css" />
+  <style>
+    .public-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 24px 20px 0;
+      font-size: 14px;
+      color: var(--ink-tertiary);
+    }
+    .public-logo svg { opacity: 0.5; }
+
+    .search-empty {
+      text-align: center;
+      padding: 32px 20px;
+      color: var(--ink-secondary);
+      font-size: 15px;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--divider);
+      transition: background var(--duration-fast) var(--ease-standard);
+    }
+    .result-row:last-child { border-bottom: none; }
+    .result-row:hover { background: var(--canvas-parchment); }
+    .result-row.winner { border-left: 3px solid var(--green); }
+    .result-row.loser { border-left: 3px solid var(--hairline); }
+
+    .result-apto { font-size: 17px; font-weight: 500; color: var(--ink); }
+    .result-pq { font-size: 14px; color: var(--ink-secondary); }
+    .result-status {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .result-status.win { color: var(--ink-success); }
+    .result-status.lose { color: var(--ink-tertiary); }
+
+    .result-highlight {
+      background: var(--green-bg);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      font-size: 13px;
+    }
+
+    .results-count {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      padding: 12px 0;
+      text-align: center;
+    }
+
+    .verify-copy-btn {
+      background: none;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--accent);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--duration-fast) var(--ease-standard);
+    }
+    .verify-copy-btn:hover { background: var(--blue-bg); border-color: var(--accent); }
+    .verify-copy-btn.copied { background: var(--green-bg); border-color: var(--green); color: var(--ink-success); }
+
+    @media (max-width: 640px) {
+      .result-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .result-status { align-self: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="public-logo">
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="14" height="10" rx="2"/>
+      <path d="M6 8h6M6 11h4"/>
+    </svg>
+    SorteoParking
+  </div>
+
+  <header class="public-header">
+    <h1 class="public-header-title" id="sorteo-title">Resultados del sorteo</h1>
+    <p class="public-header-meta" id="sorteo-meta">Cargando...</p>
+    <div class="public-search">
+      <input class="public-search-input" id="search-input" type="search" placeholder="Buscar por apartamento..." aria-label="Buscar por número de apartamento" />
+    </div>
+  </header>
+
+  <main class="page" style="padding-top: 24px;">
+    <!-- Loading -->
+    <div id="loading-state" class="text-center" style="padding: 48px 20px;">
+      <div class="skeleton skeleton-card" style="height:60px;margin-bottom:12px;"></div>
+      <div class="skeleton skeleton-card" style="height:60px;margin-bottom:12px;"></div>
+      <div class="skeleton skeleton-card" style="height:60px;"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="empty-state" style="display:none;">
+      <div class="empty-state-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16v1"/>
+        </svg>
+      </div>
+      <h3 class="empty-state-title">Sorteo no encontrado</h3>
+      <p class="empty-state-desc">El sorteo que busca no existe o aún no ha sido completado.</p>
+    </div>
+
+    <!-- Results -->
+    <div id="results-state" style="display:none;">
+      <!-- Summary -->
+      <div class="card" style="text-align:center;padding:24px;">
+        <div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap;">
+          <div><span style="font-size:28px;font-weight:700;color:var(--ink-success)" id="total-ganadores">0</span><div style="font-size:13px;color:var(--ink-secondary);margin-top:2px">Ganadores</div></div>
+          <div><span style="font-size:28px;font-weight:700;color:var(--ink-tertiary)" id="total-perdedores">0</span><div style="font-size:13px;color:var(--ink-secondary);margin-top:2px">No asignados</div></div>
+          <div><span style="font-size:28px;font-weight:700;color:var(--ink)" id="total-participantes">0</span><div style="font-size:13px;color:var(--ink-secondary);margin-top:2px">Total participantes</div></div>
+        </div>
+      </div>
+
+      <!-- Results list -->
+      <section class="card" id="results-card">
+        <div class="card-header">
+          <h2 class="card-title" id="results-title">Todos los resultados</h2>
+          <span class="badge badge-neutral" id="results-count">0</span>
+        </div>
+        <div class="results-count" id="results-filter-info"></div>
+        <div id="results-list"></div>
+        <div class="search-empty" id="search-empty" style="display:none;">
+          No se encontraron resultados para esta búsqueda.
+        </div>
+      </section>
+
+      <!-- Verification section -->
+      <section class="verify-section" id="verify-section">
+        <h3 style="font-size:17px;font-weight:600;margin-bottom:16px;color:var(--ink)">Verificar resultado</h3>
+        <p style="font-size:14px;color:var(--ink-secondary);margin-bottom:16px;line-height:1.5">
+          Cada sorteo utiliza una semilla (seed) criptográfica determinista. 
+          Cualquier persona puede reproducir el resultado usando la misma seed y el mismo algoritmo,
+          garantizando que el proceso fue justo y transparente.
+        </p>
+
+        <div class="verify-row">
+          <span class="verify-label">Seed del sorteo</span>
+          <span class="verify-value" id="verify-seed" style="font-size:11px;">—</span>
+          <button class="verify-copy-btn" id="copy-seed" data-value="">Copiar</button>
+        </div>
+        <div class="verify-row">
+          <span class="verify-label">Hash del snapshot</span>
+          <span class="verify-value" id="verify-hash" style="font-size:11px;">—</span>
+          <button class="verify-copy-btn" id="copy-hash" data-value="">Copiar</button>
+        </div>
+        <div class="verify-row">
+          <span class="verify-label">Modelo aplicado</span>
+          <span class="verify-value" id="verify-modelo">—</span>
+        </div>
+        <div class="verify-row">
+          <span class="verify-label">Fecha de ejecución</span>
+          <span class="verify-value" id="verify-fecha">—</span>
+        </div>
+
+        <!-- Disclosure -->
+        <div class="verify-disclosure">
+          <button class="verify-disclosure-trigger" id="disclosure-trigger" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" id="disclosure-icon">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            ¿Cómo verificar este resultado?
+          </button>
+          <div class="verify-disclosure-content" id="disclosure-content">
+            <ol style="padding-left:20px;list-style:decimal;line-height:1.8">
+              <li>Copie la <strong>Seed del sorteo</strong> que aparece arriba.</li>
+              <li>Copie el <strong>Hash del snapshot</strong> que aparece arriba.</li>
+              <li>Ejecute el script de verificación oficial con estos dos valores.</li>
+              <li>El script reproducirá exactamente el mismo resultado.</li>
+              <li>Compare los ganadores y parqueaderos asignados con los que aparecen en esta página.</li>
+            </ol>
+            <p style="margin-top:16px;font-size:14px;color:var(--ink-secondary)">
+              Si el resultado coincide, el sorteo fue ejecutado correctamente y sin manipulación.
+              Si no coincide, contacte a SorteoParking para una auditoría forense del log.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get('slug');
+      const sorteoId = params.get('sid');
+      const searchInput = document.getElementById('search-input');
+      const resultsList = document.getElementById('results-list');
+      const searchEmpty = document.getElementById('search-empty');
+
+      if (!slug || !sorteoId) {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('error-state').style.display = '';
+        return;
+      }
+
+      let allResults = [];
+
+      async function loadData() {
+        try {
+          const [resSorteo, resResultados] = await Promise.all([
+            fetch('/p/' + encodeURIComponent(slug) + '/sorteos/' + sorteoId),
+            fetch('/p/' + encodeURIComponent(slug) + '/sorteos/' + sorteoId + '/resultados'),
+          ]);
+
+          if (!resSorteo.ok || !resResultados.ok) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = '';
+            return;
+          }
+
+          const sorteo = await resSorteo.json();
+          const resultados = await resResultados.json();
+
+          document.getElementById('loading-state').style.display = 'none';
+          document.getElementById('results-state').style.display = '';
+
+          // Header
+          document.getElementById('sorteo-title').textContent = sorteo.conjunto_nombre || 'Resultados del sorteo';
+          document.getElementById('sorteo-meta').textContent = 
+            (sorteo.fecha ? new Date(sorteo.fecha + 'Z').toLocaleDateString('es-CO', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '') +
+            ' · ' + (resultados.length || 0) + ' participantes';
+
+          // Summary
+          const ganadores = resultados.filter(r => r.tipo_resultado === 'GANADOR');
+          const perdedores = resultados.filter(r => r.tipo_resultado !== 'GANADOR');
+          document.getElementById('total-ganadores').textContent = ganadores.length;
+          document.getElementById('total-perdedores').textContent = perdedores.length;
+          document.getElementById('total-participantes').textContent = resultados.length;
+
+          // Store for search
+          allResults = resultados;
+          renderResults(resultados);
+
+          // Verification
+          document.getElementById('verify-seed').textContent = sorteo.seed || '—';
+          document.getElementById('verify-hash').textContent = sorteo.snapshot_hash || '—';
+          document.getElementById('verify-modelo').textContent = sorteo.modelo_aplicado || 'HIBRIDO';
+          document.getElementById('verify-fecha').textContent = sorteo.fecha ? new Date(sorteo.fecha + 'Z').toLocaleString('es-CO') : '—';
+          document.getElementById('copy-seed').dataset.value = sorteo.seed || '';
+          document.getElementById('copy-hash').dataset.value = sorteo.snapshot_hash || '';
+
+        } catch(e) {
+          document.getElementById('loading-state').style.display = 'none';
+          document.getElementById('error-state').style.display = '';
+        }
+      }
+
+      function renderResults(results) {
+        if (results.length === 0) {
+          resultsList.innerHTML = '';
+          searchEmpty.style.display = '';
+          document.getElementById('results-count').textContent = '0';
+          document.getElementById('results-filter-info').textContent = '';
+          return;
+        }
+        searchEmpty.style.display = 'none';
+        document.getElementById('results-count').textContent = results.length;
+
+        const term = searchInput.value.trim().toLowerCase();
+        document.getElementById('results-filter-info').textContent = 
+          term ? 'Mostrando ' + results.length + ' de ' + allResults.length + ' resultados' : '';
+
+        resultsList.innerHTML = results.map(r => `
+          <div class="result-row ${r.tipo_resultado === 'GANADOR' ? 'winner' : 'loser'}">
+            <div>
+              <div class="result-apto">${escHtml(r.apartamento)}</div>
+              <div class="result-pq">${r.tipo_resultado === 'GANADOR' ? 'Parqueadero ' + escHtml(r.parqueadero_asignado) + (r.zona_asignada ? ' · ' + escHtml(r.zona_asignada) : '') : ''}</div>
+            </div>
+            <div class="result-status ${r.tipo_resultado === 'GANADOR' ? 'win' : 'lose'}">
+              ${r.tipo_resultado === 'GANADOR' 
+                ? '<span class="result-highlight">Asignado</span>' + (r.fue_reasignado ? ' (reasignado)' : '')
+                : 'No asignado'}
+            </div>
+          </div>
+        `).join('');
+      }
+
+      function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+      // Search
+      searchInput.addEventListener('input', function() {
+        const term = this.value.trim().toLowerCase();
+        if (!term) {
+          renderResults(allResults);
+          return;
+        }
+        const filtered = allResults.filter(r =>
+          (r.apartamento || '').toLowerCase().includes(term)
+        );
+        renderResults(filtered);
+      });
+
+      // Copy buttons
+      document.querySelectorAll('.verify-copy-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const val = this.dataset.value;
+          if (!val) return;
+          navigator.clipboard.writeText(val).then(() => {
+            this.textContent = 'Copiado';
+            this.classList.add('copied');
+            setTimeout(() => { this.textContent = 'Copiar'; this.classList.remove('copied'); }, 2000);
+          }).catch(() => {
+            // Fallback
+            const ta = document.createElement('textarea');
+            ta.value = val; document.body.appendChild(ta);
+            ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta);
+            this.textContent = 'Copiado';
+            this.classList.add('copied');
+            setTimeout(() => { this.textContent = 'Copiar'; this.classList.remove('copied'); }, 2000);
+          });
+        });
+      });
+
+      // Disclosure
+      const trigger = document.getElementById('disclosure-trigger');
+      const content = document.getElementById('disclosure-content');
+      const icon = document.getElementById('disclosure-icon');
+      trigger.addEventListener('click', () => {
+        const isOpen = content.classList.toggle('open');
+        trigger.setAttribute('aria-expanded', isOpen);
+        icon.style.transform = isOpen ? 'rotate(90deg)' : '';
+        icon.style.transition = 'transform var(--duration-fast) ease';
+      });
+
+      loadData();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+## 6.1 Diferencia respecto a v1.4.3
+
+En v1.4.3 los OTPs se confirmaban con consejeros presentes o en Zoom. En v1.0 los consejeros pueden estar en cualquier lugar — reciben su OTP por WhatsApp y confirman desde su celular accediendo a la URL del panel OTP.
+
+### 6.2 Flujo del protocolo
+
+1. TENANT\_ADMIN inicia el sorteo e ingresa el WhatsApp de los 5 consejeros.
+2. El sistema genera 5 OTPs únicos (SHA-256) con expiración de 30 minutos.
+3. Cada consejero recibe por WhatsApp: su OTP, el nombre del conjunto y un enlace directo al panel de confirmación.
+4. El consejero abre el enlace desde su celular e ingresa su OTP.
+5. El panel OTP del TENANT\_ADMIN actualiza en tiempo real el progreso (0/5 → 5/5).
+6. Al confirmar el 5° OTP, el estado cambia a `LISTO` y se habilita el botón **Ejecutar sorteo**.
+7. OTP no confirmado en 30 minutos: expira. El TENANT\_ADMIN puede regenerar sin invalidar los ya confirmados.
+
+
+### 6.4 Especificación del OTP — seguridad y entropía
+
+| Atributo | Valor | Justificación |
+|---|---|---|
+| Longitud | 6 dígitos | UX óptima para WhatsApp y email |
+| Generación | `secrets.randbelow(1_000_000)` con `.zfill(6)` | ~20 bits de entropía — suficiente con rate limiting estricto |
+| Expiración | 5 minutos en DB | No solo en UI — validado en cada intento |
+| Intentos máximos | 3 por código | Al 4to intento el OTP se invalida |
+| Bloqueo por IP | 15 minutos tras 3 fallos | Previene fuerza bruta distribuida |
+| Bloqueo por tenant | 30 minutos tras 10 fallos totales | Previene ataques de baja frecuencia |
+| Almacenamiento | SHA-256 del OTP en DB | El OTP real nunca persiste en texto plano |
+
+**Generación correcta:**
+```python
+import secrets
+
+def generar_otp() -> str:
+    """Genera OTP de 6 dígitos con entropía criptográfica."""
+    return str(secrets.randbelow(1_000_000)).zfill(6)
+```
+
+**Validación con rate limiting:**
+```python
+def confirmar_otp(session: SesionOTP, otp_ingresado: str, db: Session) -> bool:
+    # 1. Verificar expiración real en DB
+    if session.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "OTP expirado")
+    
+    # 2. Verificar intentos máximos
+    if session.intentos >= 3:
+        session.invalidado = True
+        db.commit()
+        raise HTTPException(400, "OTP invalidado por exceso de intentos")
+    
+    # 3. Comparar en tiempo constante contra hash
+    hash_ingresado = sha256(otp_ingresado.encode()).hexdigest()
+    if not hmac.compare_digest(hash_ingresado, session.otp_hash):
+        session.intentos += 1
+        db.commit()
+        raise HTTPException(400, "OTP incorrecto")
+    
+    session.confirmado = True
+    db.commit()
+    return True
+```
+
+
+### 6.5 Inmutabilidad del snapshot de participantes
+
+El snapshot se fija antes del primer OTP confirmado. En `/ejecutar` se valida que no haya cambiado.
+
+```python
+def ejecutar_sorteo(sorteo_id: int, db: Session) -> list[ResultadoSorteo]:
+    sorteo = db.query(Sorteo).filter(Sorteo.id == sorteo_id).first()
+    
+    # Recalcular hash actual de participantes
+    participantes = db.query(Participante).filter(
+        Participante.sorteo_id == sorteo_id
+    ).order_by(Participante.id).all()
+    
+    hash_actual = sha256(
+        json.dumps([p.to_dict() for p in participantes], 
+                   sort_keys=True).encode()
+    ).hexdigest()
+    
+    # Validar inmutabilidad
+    if not hmac.compare_digest(hash_actual, sorteo.snapshot_hash):
+        raise HTTPException(
+            422, 
+            "Integridad comprometida: los participantes fueron "
+            "modificados después de confirmar los OTPs"
+        )
+    
+    # Continuar con el motor híbrido
+    return ejecutar_sorteo_hibrido(sorteo, participantes, db)
+```
+
+
+### 6.6 Anti-replay de OTP — invalidación inmediata (T-118)
+
+Un OTP confirmado debe invalidarse inmediatamente. No puede reutilizarse bajo ninguna circunstancia.
+
+**Reglas anti-replay:**
+
+1. Al confirmar exitosamente un OTP → `sesion_otp.confirmado = True` + `sesion_otp.confirmado_en = now()`
+2. Cualquier intento posterior de confirmar el mismo OTP → HTTP 400 "OTP ya utilizado"
+3. El OTP se considera usado incluso si la sesión del sorteo falla después
+4. Un OTP expirado no puede reactivarse — solo regenerarse
+
+```python
+def confirmar_otp(session_id: int, otp_ingresado: str, db: Session) -> bool:
+    sesion = db.query(SesionOTP).filter(
+        SesionOTP.id == session_id
+    ).with_for_update().first()  # Lock para prevenir race condition
+
+    # Anti-replay: verificar si ya fue usado
+    if sesion.confirmado:
+        raise HTTPException(400, "OTP ya utilizado — no se puede reutilizar")
+
+    # Verificar expiración
+    if sesion.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "OTP expirado")
+
+    # Verificar intentos
+    if sesion.intentos >= 3:
+        raise HTTPException(400, "OTP bloqueado por exceso de intentos")
+
+    # Comparar en tiempo constante
+    hash_ingresado = sha256(otp_ingresado.encode()).hexdigest()
+    if not hmac.compare_digest(hash_ingresado, sesion.otp_hash):
+        sesion.intentos += 1
+        db.commit()
+        raise HTTPException(400, "OTP incorrecto")
+
+    # Marcar como usado — single-use estricto
+    sesion.confirmado = True
+    sesion.confirmado_en = datetime.now(timezone.utc)
+    db.commit()
+    return True
+```
+
+**El `with_for_update()` es obligatorio** — previene que dos requests simultáneos confirmen el mismo OTP (race condition C-10).
+
+### 6.3 Invariantes del protocolo (no negociables)
+
+* Los 5 OTPs deben confirmarse antes de ejecutar el sorteo — sin excepción.
+* El snapshot de participantes se fija antes de la confirmación del primer OTP.
+* Regenerar un OTP expirado no invalida los OTPs ya confirmados.
+* El seed se deriva de `SHA-256(timestamp\_utc + hash del snapshot)` — no puede predecirse.
+* El log registra la hora exacta de confirmación de cada consejero — aparece en el acta.
+
+\---

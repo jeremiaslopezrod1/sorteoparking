@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SorteoParking — Super Admin</title>
+  <link rel="stylesheet" href="/static/global.css" />
+  <style>
+    .login-card {
+      max-width: 400px;
+      margin: 80px auto;
+      padding: 40px;
+      background: var(--canvas);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
+    }
+    .login-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-logo h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .login-logo p {
+      font-size: 15px;
+      color: var(--ink-secondary);
+    }
+    .login-error {
+      font-size: 13px;
+      color: var(--ink-error);
+      text-align: center;
+      margin-top: 12px;
+      display: none;
+    }
+    .login-error.visible { display: block; }
+
+    .admin-dashboard { display: none; }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .metric-card {
+      background: var(--canvas);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      text-align: center;
+      box-shadow: var(--shadow-sm);
+    }
+    .metric-value {
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .metric-label {
+      font-size: 13px;
+      color: var(--ink-secondary);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    .tenant-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--divider);
+      gap: 12px;
+    }
+    .tenant-row:last-child { border-bottom: none; }
+    .tenant-info h3 { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+    .tenant-info p { font-size: 13px; color: var(--ink-secondary); }
+    .tenant-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    .status-select {
+      padding: 6px 28px 6px 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--hairline);
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--canvas);
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%236e6e73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav" role="navigation" aria-label="Navegación principal">
+    <div class="nav-brand">
+      <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+        <rect x="2" y="4" width="14" height="10" rx="2"/>
+        <path d="M6 8h6M6 11h4"/>
+      </svg>
+      SorteoParking
+    </div>
+    <div class="nav-actions">
+      <span id="nav-user" class="nav-user" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="7" cy="5" r="2.5"/><path d="M2 13c0-3 2.2-5 5-5s5 2 5 5"/></svg>
+        <span id="nav-user-name">admin</span>
+      </span>
+      <a id="nav-dashboard" href="/static/dashboard.html" class="nav-link" style="display:none;">Dashboard</a>
+      <button id="logout-btn" class="nav-link" style="display:none;">Salir</button>
+    </div>
+  </nav>
+
+  <!-- Login -->
+  <div id="login-view">
+    <div class="login-card">
+      <div class="login-logo">
+        <svg viewBox="0 0 40 40" width="40" height="40" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="8" width="32" height="24" rx="4"/>
+          <path d="M12 18h16M12 24h12"/>
+        </svg>
+        <h1>SorteoParking</h1>
+        <p>Super Admin</p>
+      </div>
+      <form id="login-form">
+        <div class="input-group">
+          <label class="input-label" for="username">Usuario</label>
+          <input id="username" class="input" required autocomplete="username" />
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="password">Contraseña</label>
+          <input id="password" class="input" type="password" required autocomplete="current-password" />
+        </div>
+        <p id="login-error" class="login-error">Credenciales inválidas</p>
+        <button id="login-btn" class="btn btn-primary btn-lg btn-block" type="submit">
+          Iniciar sesión
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard-view" class="admin-dashboard">
+    <main class="page page-wide">
+      <div class="hero-dashboard">
+        <h1>Super Admin</h1>
+        <p>Gestión global de conjuntos y métricas del sistema</p>
+      </div>
+
+      <!-- Metrics -->
+      <div id="metricas" class="metric-grid">
+        <div class="metric-card"><div class="metric-value"><span class="skeleton" style="display:inline-block;width:60px;height:34px"></span></div><div class="metric-label">Tenants totales</div></div>
+        <div class="metric-card"><div class="metric-value"><span class="skeleton" style="display:inline-block;width:40px;height:34px"></span></div><div class="metric-label">Activos</div></div>
+        <div class="metric-card"><div class="metric-value"><span class="skeleton" style="display:inline-block;width:50px;height:34px"></span></div><div class="metric-label">Sorteos totales</div></div>
+        <div class="metric-card"><div class="metric-value"><span class="skeleton" style="display:inline-block;width:40px;height:34px"></span></div><div class="metric-label">Completados</div></div>
+        <div class="metric-card"><div class="metric-value"><span class="skeleton" style="display:inline-block;width:50px;height:34px"></span></div><div class="metric-label">Logs auditoría</div></div>
+      </div>
+
+      <!-- Tenants list -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Conjuntos registrados</h2>
+          <span class="badge badge-info" id="tenant-count">0</span>
+        </div>
+        <div id="tenants-list">
+          <div class="empty-state" id="tenants-empty">
+            <div class="empty-state-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4">
+                <rect x="3" y="4" width="18" height="16" rx="3"/>
+                <path d="M8 12h8M8 16h6"/>
+              </svg>
+            </div>
+            <h3 class="empty-state-title">No hay conjuntos registrados</h3>
+            <p class="empty-state-desc">Los conjuntos aparecerán aquí una vez que sean registrados desde el panel de administración.</p>
+          </div>
+          <div id="tenants-rows"></div>
+        </div>
+      </section>
+
+      <!-- Create tenant -->
+      <section class="card mt-6">
+        <div class="card-header">
+          <h2 class="card-title">Crear conjunto</h2>
+        </div>
+        <form id="create-tenant-form">
+          <div class="flex gap-4" style="flex-wrap: wrap;">
+            <div class="input-group" style="flex:1;min-width:200px">
+              <label class="input-label" for="c-nombre">Nombre</label>
+              <input id="c-nombre" class="input" required />
+            </div>
+            <div class="input-group" style="flex:1;min-width:200px">
+              <label class="input-label" for="c-municipio">Municipio</label>
+              <input id="c-municipio" class="input" required />
+            </div>
+            <div class="input-group" style="flex:1;min-width:200px">
+              <label class="input-label" for="c-email">Email admin</label>
+              <input id="c-email" class="input" type="email" required />
+            </div>
+          </div>
+          <div class="flex gap-4" style="flex-wrap: wrap;">
+            <div class="input-group" style="flex:1;min-width:200px">
+              <label class="input-label" for="c-nit">NIT</label>
+              <input id="c-nit" class="input" />
+            </div>
+            <div class="input-group" style="flex:1;min-width:200px">
+              <label class="input-label" for="c-unidades">Unidades</label>
+              <input id="c-unidades" class="input" type="number" min="1" />
+            </div>
+          </div>
+          <div class="card-footer">
+            <button type="submit" class="btn btn-primary btn-lg">Crear conjunto</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Backup -->
+      <section class="card mt-4">
+        <div class="card-header">
+          <h2 class="card-title">Operaciones</h2>
+        </div>
+        <div class="flex gap-3">
+          <button id="backup-btn" class="btn btn-secondary">Ejecutar backup</button>
+        </div>
+        <div id="backup-out" class="status-box mt-4">—</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let token = null;
+
+    function showLogin() { document.getElementById('login-view').style.display = 'block'; document.getElementById('dashboard-view').style.display = 'none'; }
+    function showDashboard() {
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('dashboard-view').style.display = 'block';
+      document.getElementById('logout-btn').style.display = '';
+      document.getElementById('nav-user').style.display = '';
+      document.getElementById('nav-dashboard').style.display = '';
+      loadMetrics();
+      loadTenants();
+    }
+
+    // Login
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = document.getElementById('username').value.trim();
+      const pass = document.getElementById('password').value;
+      const errEl = document.getElementById('login-error');
+      document.getElementById('login-btn').disabled = true;
+
+      try {
+        const res = await fetch('/auth/login/superadmin', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user, password: pass }),
+        });
+        if (res.ok) {
+          errEl.classList.remove('visible');
+          showDashboard();
+        } else {
+          errEl.classList.add('visible');
+        }
+      } catch (e) {
+        errEl.textContent = 'Error de conexión: ' + e.message;
+        errEl.classList.add('visible');
+      }
+      document.getElementById('login-btn').disabled = false;
+    });
+
+    // Logout
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+      document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      showLogin();
+    });
+
+    // Load metrics
+    async function loadMetrics() {
+      try {
+        const res = await fetch('/admin/metricas', { credentials: 'include' });
+        if (!res.ok) return;
+        const m = await res.json();
+        const container = document.getElementById('metricas');
+        container.innerHTML = `
+          <div class="metric-card"><div class="metric-value">${m.tenants?.total || 0}</div><div class="metric-label">Tenants totales</div></div>
+          <div class="metric-card"><div class="metric-value">${m.tenants?.activos || 0}</div><div class="metric-label">Activos</div></div>
+          <div class="metric-card"><div class="metric-value">${m.sorteos?.total || 0}</div><div class="metric-label">Sorteos totales</div></div>
+          <div class="metric-card"><div class="metric-value">${m.sorteos?.completados || 0}</div><div class="metric-label">Completados</div></div>
+          <div class="metric-card"><div class="metric-value">${m.logs_auditoria || 0}</div><div class="metric-label">Logs auditoría</div></div>
+        `;
+      } catch(e) {}
+    }
+
+    // Load tenants
+    async function loadTenants() {
+      try {
+        const res = await fetch('/admin/tenants', { credentials: 'include' });
+        if (!res.ok) return;
+        const tenants = await res.json();
+        const rows = document.getElementById('tenants-rows');
+        const empty = document.getElementById('tenants-empty');
+        document.getElementById('tenant-count').textContent = tenants.length;
+
+        if (tenants.length === 0) {
+          empty.style.display = '';
+          rows.innerHTML = '';
+          return;
+        }
+        empty.style.display = 'none';
+        rows.innerHTML = tenants.map(t => `
+          <div class="tenant-row" data-id="${t.id}">
+            <div class="tenant-info">
+              <h3>${escHtml(t.nombre)}</h3>
+              <p>${escHtml(t.municipio)} · ${escHtml(t.email_admin)} · ${t.nit ? 'NIT ' + escHtml(t.nit) : 'Sin NIT'} · ${t.total_unidades || '?'} unidades</p>
+            </div>
+            <div class="tenant-actions">
+              <a href="/static/dashboard.html#uuid=${t.id}" class="btn btn-sm btn-secondary" style="font-size:12px;padding:4px 12px;height:32px;min-height:unset;text-decoration:none;">Dashboard</a>
+              <span class="badge ${t.estado === 'ACTIVO' ? 'badge-success' : t.estado === 'SUSPENDIDO' ? 'badge-error' : 'badge-warning'}">${t.estado}</span>
+              <select class="status-select" data-id="${t.id}" onchange="cambiarEstado('${t.id}', this.value)">
+                <option value="ACTIVO" ${t.estado === 'ACTIVO' ? 'selected' : ''}>Activo</option>
+                <option value="SUSPENDIDO" ${t.estado === 'SUSPENDIDO' ? 'selected' : ''}>Suspendido</option>
+                <option value="DEMO" ${t.estado === 'DEMO' ? 'selected' : ''}>Demo</option>
+              </select>
+            </div>
+          </div>
+        `).join('');
+      } catch(e) {}
+    }
+
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    async function cambiarEstado(id, estado) {
+      try {
+        const res = await fetch('/admin/tenants/' + id + '/estado', {
+          method: 'PATCH', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') || '' },
+          body: JSON.stringify({ estado }),
+        });
+        if (!res.ok) { alert('Error al cambiar estado'); loadTenants(); }
+      } catch(e) { alert('Error de conexión'); }
+    }
+
+    function getCookie(n) { const v = document.cookie.split('; ').find(r => r.startsWith(n + '=')); return v ? v.split('=')[1] : null; }
+
+    // Create tenant
+    document.getElementById('create-tenant-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        nombre: document.getElementById('c-nombre').value.trim(),
+        municipio: document.getElementById('c-municipio').value.trim(),
+        email_admin: document.getElementById('c-email').value.trim(),
+        nit: document.getElementById('c-nit').value.trim() || null,
+        total_unidades: document.getElementById('c-unidades').value ? Number(document.getElementById('c-unidades').value) : null,
+      };
+      try {
+        const res = await fetch('/admin/tenants', {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') || '' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Conjunto creado: ' + data.id);
+          loadTenants();
+          loadMetrics();
+          document.getElementById('create-tenant-form').reset();
+        } else {
+          alert('Error: ' + (data.detail || JSON.stringify(data)));
+        }
+      } catch(e) { alert('Error de conexión: ' + e.message); }
+    });
+
+    // Backup
+    document.getElementById('backup-btn').addEventListener('click', async () => {
+      const out = document.getElementById('backup-out');
+      out.textContent = 'Ejecutando backup...';
+      try {
+        const res = await fetch('/admin/backup', { method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-Token': getCookie('csrf_token') || '' } });
+        const data = await res.json();
+        out.textContent = res.ok ? 'Backup exitoso: ' + JSON.stringify(data) : 'Error: ' + JSON.stringify(data);
+      } catch(e) { out.textContent = 'Error de red: ' + e.message; }
+    });
+
+    // Check session on load
+    (async () => {
+      try {
+        const res = await fetch('/admin/metricas', { credentials: 'include' });
+        if (res.ok) { showDashboard(); }
+      } catch(e) {}
+    })();
+  </script>
+</body>
+</html>

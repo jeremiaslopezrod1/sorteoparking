@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SorteoParking — Panel de administración</title>
+  <link rel="stylesheet" href="/static/global.css" />
+  <style>
+    /* Page-specific overrides */
+    .hero-dashboard {
+      text-align: left;
+      padding: 40px 0 32px;
+    }
+    .hero-dashboard h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+    .hero-dashboard p { font-size: 17px; color: var(--ink-secondary); margin-top: 4px; }
+
+    .consejero-card {
+      background: var(--canvas-pearl);
+      border: 1px solid var(--hairline-light);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: grid;
+      gap: 10px;
+    }
+    .consejero-card .num { font-size: 13px; font-weight: 500; color: var(--ink-tertiary); margin-bottom: 2px; }
+
+    .status-box {
+      background: var(--canvas-parchment);
+      border: 1px solid var(--hairline-light);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-size: 14px;
+      font-family: var(--font-mono);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      min-height: 4em;
+      margin-top: 16px;
+      color: var(--ink);
+    }
+    .status-box.seed {
+      font-size: clamp(1.25rem, 4vw, 2.5rem);
+      word-break: break-all;
+      text-align: center;
+      color: var(--accent);
+      display: none;
+    }
+
+    .otp-progress {
+      margin: 16px 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .otp-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--hairline-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink-tertiary);
+      transition: all var(--duration-slow) var(--ease-standard);
+    }
+    .otp-dot.confirmed { background: var(--green); color: #fff; }
+
+    .step-hint {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .consejeros-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 640px) { .consejeros-2col { grid-template-columns: 1fr; } }
+
+    .divider-labeled {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 32px 0 24px;
+      color: var(--ink-tertiary);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .divider-labeled::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--divider);
+    }
+  </style>
+</head>
+<body>
+  <!-- Apple Nav Bar -->
+  <nav class="nav" role="navigation" aria-label="Navegación principal">
+    <div class="nav-brand">
+      <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="14" height="10" rx="2"/>
+        <path d="M6 8h6M6 11h4"/>
+      </svg>
+      SorteoParking
+    </div>
+    <div class="nav-actions">
+      <a href="/static/superadmin.html" class="nav-link" aria-label="Panel super admin">Admin</a>
+      <button id="logout-btn" class="nav-link" aria-label="Cerrar sesión">Salir</button>
+    </div>
+  </nav>
+
+  <main class="page">
+    <!-- Header -->
+    <div class="hero-dashboard">
+      <h1>Panel de administración</h1>
+      <p>Catálogo · Sorteo</p>
+      <div class="card" style="background:var(--blue-bg);border-radius:var(--radius-lg);padding:16px;margin-top:16px;font-size:14px;color:var(--ink);">
+        <strong>Para empezar:</strong> El SUPER_ADMIN debe crear el conjunto en 
+        <a href="/static/superadmin.html" style="font-weight:500">superadmin.html</a> y compartir el UUID.
+        Luego ingrese el UUID del conjunto en los campos indicados abajo.
+      </div>
+    </div>
+
+
+
+    <!-- Catálogo -->
+    <section class="card" aria-label="Catálogo de parqueaderos">
+      <div class="card-header">
+        <h2 class="card-title">Catálogo de parqueaderos</h2>
+        <span class="badge badge-neutral">Paso 1</span>
+      </div>
+      <p class="section-subtitle">Cargue el catálogo maestro de parqueaderos una sola vez por conjunto.</p>
+      <div class="input-group">
+        <label class="input-label" for="cat-token">UUID del conjunto</label>
+        <input id="cat-token" class="input input-mono" placeholder="UUID del conjunto" />
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="cat-file">Archivo (.xlsx o .csv)</label>
+        <input type="file" id="cat-file" class="input" accept=".xlsx,.xlsm,.csv" />
+      </div>
+      <div class="card-footer">
+        <button type="button" id="cat-cargar" class="btn btn-primary btn-lg btn-block">
+          Cargar catálogo
+        </button>
+      </div>
+      <div id="cat-out" class="status-box" role="status">Sin catálogo cargado.</div>
+    </section>
+
+    <!-- Sorteo -->
+    <section class="card" aria-label="Evento de sorteo">
+      <div class="card-header">
+        <h2 class="card-title">Evento de sorteo</h2>
+        <span class="badge badge-neutral">Paso 2</span>
+      </div>
+      <p class="section-subtitle">Cargue la lista de elegibles, configure los 5 consejeros y ejecute el sorteo.</p>
+
+      <div class="input-group">
+        <label class="input-label" for="st-token">UUID del conjunto</label>
+        <input id="st-token" class="input input-mono" placeholder="Se auto-rellena al crear el conjunto" required />
+      </div>
+
+      <div class="input-group">
+        <label class="input-label" for="st-file">Excel de elegibles (.xlsx)</label>
+        <input id="st-file" type="file" class="input" accept=".xlsx,.xlsm" required />
+      </div>
+
+      <button type="button" id="st-carga" class="btn btn-primary btn-lg">
+        Cargar Excel
+      </button>
+
+      <div class="input-group mt-6">
+        <label class="input-label" for="st-sorteo-id">Sorteo ID</label>
+        <input id="st-sorteo-id" class="input input-mono" type="number" min="1" placeholder="Se rellena al cargar el Excel" />
+      </div>
+
+      <div class="divider-labeled">CONSEJEROS</div>
+      <p class="step-hint">Ingrese los nombres y correos de los 5 consejeros. Recibirán un OTP por email para aprobar el sorteo.</p>
+      <div id="st-consejeros" class="consejeros-2col"></div>
+
+      <div class="card-footer" style="margin-top: 16px;">
+        <button type="button" id="st-iniciar" class="btn btn-primary btn-lg btn-block">
+          Iniciar sorteo y enviar OTPs
+        </button>
+      </div>
+
+      <!-- OTP Progress -->
+      <div id="otp-progress" class="otp-progress hidden"></div>
+
+      <div id="st-otp" class="status-box" role="status">Estado OTP: —</div>
+      <div id="st-sorteo-estado" class="status-box" role="status">Sorteo: —</div>
+      <div id="st-seed" class="status-box seed"></div>
+
+      <div class="flex gap-3 mt-4" style="flex-wrap: wrap;">
+        <button type="button" id="st-ejecutar" class="btn btn-primary btn-lg" disabled>Ejecutar sorteo</button>
+        <button type="button" id="st-notificar" class="btn btn-secondary btn-lg" disabled>Notificar participantes</button>
+        <button type="button" id="st-exportar" class="btn btn-secondary btn-lg" disabled>Exportar acta</button>
+      </div>
+      <div id="st-out" class="status-box" role="status">—</div>
+    </section>
+  </main>
+
+  <script>
+    function getCookie(n) { const v = document.cookie.split('; ').find(r => r.startsWith(n + '=')); return v ? v.split('=')[1] : null; }
+
+    // Auto-fill UUID from URL hash (#uuid=xxx)
+    (function() {
+      const hash = window.location.hash.replace('#', '');
+      const params = new URLSearchParams(hash);
+      const uuid = params.get('uuid');
+      if (uuid) {
+        document.getElementById('st-token').value = uuid;
+        document.getElementById('cat-token').value = uuid;
+      }
+    })();
+
+    function showToast(msg, type) {
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-' + type;
+      toast.innerHTML = '<span>' + msg + '</span><button class="alert-dismiss" onclick="this.parentElement.remove()">✕</button>';
+      const c = document.querySelector('.toast-container') || (() => { const c = document.createElement('div'); c.className = 'toast-container'; document.body.appendChild(c); return c; })();
+      c.appendChild(toast);
+      setTimeout(() => { toast.remove(); }, 4000);
+    }
+
+    function checkAuth(r) {
+      if (r.status === 403) { window.location.href = '/static/superadmin.html'; return true; }
+      return false;
+    }
+
+    // Catálogo
+    document.getElementById('cat-cargar').addEventListener('click', async () => {
+      const f = document.getElementById('cat-file').files[0];
+      const token = document.getElementById('cat-token').value.trim();
+      const out = document.getElementById('cat-out');
+      if (!f) { out.textContent = 'Seleccione el archivo.'; return; }
+      if (!token) { out.textContent = 'Ingrese el UUID del conjunto.'; return; }
+      const fd = new FormData(); fd.append('archivo', f);
+      out.textContent = 'Cargando catálogo...';
+      try {
+        const res = await fetch('/catalogo/carga-csv', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          out.textContent = 'Catálogo cargado.\n' + JSON.stringify(data, null, 2);
+          document.getElementById('st-token').value = token;
+          showToast('Catálogo cargado exitosamente', 'success');
+        } else { out.textContent = 'Error HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2); }
+      } catch(e) { out.textContent = 'Error de red: ' + e.message; }
+    });
+
+    // Sorteo
+    (function () {
+      const box = document.getElementById('st-consejeros');
+      for (let i = 1; i <= 5; i++) {
+        const d = document.createElement('div'); d.className = 'consejero-card';
+        d.innerHTML = '<div class="num">Consejero ' + i + '</div>' +
+          '<input data-c="nombre" class="input" placeholder="Nombre" />' +
+          '<input data-c="email" class="input" placeholder="Email" type="email" required />';
+        box.appendChild(d);
+      }
+
+      function leerConsejeros() {
+        return Array.from(box.querySelectorAll('.consejero-card')).map(g => ({
+          nombre: g.querySelector('[data-c=nombre]').value.trim(),
+          email: g.querySelector('[data-c=email]').value.trim(),
+        }));
+      }
+
+      document.getElementById('st-carga').addEventListener('click', async () => {
+        const f = document.getElementById('st-file').files[0];
+        const token = document.getElementById('st-token').value.trim();
+        const out = document.getElementById('st-out');
+        if (!token) { out.textContent = 'Ingrese el UUID del conjunto.'; return; }
+        if (!f) { out.textContent = 'Seleccione un archivo Excel.'; return; }
+        const fd = new FormData(); fd.append('archivo', f);
+        out.textContent = 'Subiendo...';
+        try {
+          const res = await fetch('/sorteos/carga-excel', { method: 'POST', credentials: 'include',
+            headers: { 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' }, body: fd });
+          if (checkAuth(res)) return;
+          const data = await res.json().catch(() => ({}));
+          out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
+          if (res.ok && data.sorteo_id) {
+            document.getElementById('st-sorteo-id').value = data.sorteo_id;
+            startPollIfSid();
+            showToast('Participantes cargados: ' + (data.participantes_cargados || '?'), 'success');
+          }
+        } catch (e) { out.textContent = 'Error: ' + e.message; }
+      });
+
+      document.getElementById('st-iniciar').addEventListener('click', async () => {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        const token = document.getElementById('st-token').value.trim();
+        const out = document.getElementById('st-out');
+        if (!token) { out.textContent = 'Ingrese el UUID del conjunto.'; return; }
+        if (!sid) { out.textContent = 'Indique sorteo_id.'; return; }
+        const consejeros = leerConsejeros();
+        out.textContent = 'Iniciando...';
+        try {
+          const res = await fetch('/sorteos/iniciar', { method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' },
+            body: JSON.stringify({ sorteo_id: sid, consejeros }) });
+          if (checkAuth(res)) return;
+          const data = await res.json().catch(() => ({}));
+          out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
+          if (res.ok) { startPollIfSid(); showToast('OTPs enviados a los consejeros', 'success'); }
+        } catch (e) { out.textContent = 'Error: ' + e.message; }
+      });
+
+      let pollTimer = null;
+      function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+      function startPollIfSid() {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        stopPoll();
+        if (!sid) return;
+        pollTimer = setInterval(pollOtp, 2000);
+        pollOtp();
+      }
+
+      async function pollOtp() {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        if (!sid) return;
+        const token = document.getElementById('st-token').value.trim();
+        try {
+          const [rOtp, rEst] = await Promise.all([
+            fetch('/sorteos/' + sid + '/otp/estado', { credentials: 'include', headers: { 'Authorization': 'Bearer ' + token } }),
+            fetch('/sorteos/' + sid + '/estado', { credentials: 'include', headers: { 'Authorization': 'Bearer ' + token } }),
+          ]);
+          const o = rOtp.ok ? await rOtp.json() : {};
+          const e = rEst.ok ? await rEst.json() : {};
+
+          const prog = document.getElementById('otp-progress');
+          if (o.total > 0) {
+            prog.classList.remove('hidden');
+            prog.innerHTML = '';
+            for (let i = 0; i < o.total; i++) {
+              const dot = document.createElement('div'); dot.className = 'otp-dot';
+              const confirmed = i < (o.confirmados || 0);
+              dot.classList.toggle('confirmed', confirmed);
+              dot.textContent = confirmed ? '✓' : (i + 1);
+              prog.appendChild(dot);
+            }
+          }
+
+          const listo = o.total > 0 && o.confirmados === o.total;
+          document.getElementById('st-otp').textContent = 'OTP ' + (o.confirmados || 0) + '/' + (o.total || 0) +
+            (listo ? ' — LISTO (listo para ejecutar)' : '') + ' — ' + JSON.stringify(o.consejeros || []);
+
+          document.getElementById('st-sorteo-estado').textContent = rEst.ok ? 'Estado: ' + e.estado + (e.seed ? ' - Seed asignado' : '') : 'Estado error HTTP ' + rEst.status;
+          const seedEl = document.getElementById('st-seed');
+          if (e.seed) { seedEl.style.display = 'block'; seedEl.textContent = e.seed; } else { seedEl.style.display = 'none'; }
+          document.getElementById('st-ejecutar').disabled = e.estado !== 'LISTO';
+          document.getElementById('st-notificar').disabled = e.estado !== 'COMPLETADO';
+          document.getElementById('st-exportar').disabled = e.estado !== 'COMPLETADO';
+          if (e.estado === 'COMPLETADO' || e.estado === 'ERROR') stopPoll();
+        } catch (_) {}
+      }
+
+      document.getElementById('st-sorteo-id').addEventListener('input', startPollIfSid);
+
+      document.getElementById('st-ejecutar').addEventListener('click', async () => {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        const token = document.getElementById('st-token').value.trim();
+        const out = document.getElementById('st-out');
+        out.textContent = 'Ejecutando sorteo...';
+        try {
+          const res = await fetch('/sorteos/' + sid + '/ejecutar', { method: 'POST', credentials: 'include',
+            headers: { 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' } });
+          const data = await res.json().catch(() => ({}));
+          out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
+          if (res.ok) showToast('Sorteo ejecutado exitosamente', 'success');
+          pollOtp();
+        } catch (e) { out.textContent = 'Error: ' + e.message; }
+      });
+
+      document.getElementById('st-notificar').addEventListener('click', async () => {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        const token = document.getElementById('st-token').value.trim();
+        const out = document.getElementById('st-out');
+        out.textContent = 'Enviando notificaciones...';
+        try {
+          const res = await fetch('/sorteos/' + sid + '/notificar', { method: 'POST', credentials: 'include',
+            headers: { 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' } });
+          const data = await res.json().catch(() => ({}));
+          out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
+          if (res.ok) showToast('Notificaciones enviadas', 'success');
+        } catch (e) { out.textContent = 'Error: ' + e.message; }
+      });
+
+      document.getElementById('st-exportar').addEventListener('click', async () => {
+        const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
+        const token = document.getElementById('st-token').value.trim();
+        try {
+          const res = await fetch('/sorteos/' + sid + '/exportar?formato=excel', { method: 'POST', credentials: 'include',
+            headers: { 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' } });
+          if (!res.ok) { document.getElementById('st-out').textContent = 'HTTP ' + res.status + '\n' + await res.text(); return; }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'acta_sorteo_' + sid + '.xlsx';
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+          document.getElementById('st-out').textContent = 'Acta descargada: acta_sorteo_' + sid + '.xlsx';
+          showToast('Acta descargada', 'success');
+        } catch (e) { document.getElementById('st-out').textContent = 'Error: ' + e.message; }
+      });
+
+      document.getElementById('logout-btn').addEventListener('click', () => {
+        document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        window.location.href = '/static/superadmin.html';
+      });
+    })();
+  </script>
+</body>
+</html>

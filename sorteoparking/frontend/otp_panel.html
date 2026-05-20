@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="es" class="otp-body">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SorteoParking — Panel OTP</title>
+  <link rel="stylesheet" href="/static/global.css" />
+  <style>
+    .otp-body {
+      background: #0a0a1a;
+      min-height: 100vh;
+    }
+
+    .otp-brand {
+      text-align: center;
+      padding: 32px 20px 24px;
+    }
+    .otp-brand svg { opacity: 0.6; margin-bottom: 12px; }
+    .otp-brand h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f5f5f7;
+      letter-spacing: -0.01em;
+    }
+    .otp-brand p {
+      font-size: 14px;
+      color: rgba(255,255,255,0.45);
+      margin-top: 4px;
+    }
+
+    .otp-progress-label {
+      text-align: center;
+      font-size: 15px;
+      color: rgba(255,255,255,0.65);
+      margin-bottom: 8px;
+    }
+
+    /* Status: all confirmed */
+    .otp-all-confirmed {
+      text-align: center;
+      padding: 48px 20px;
+    }
+    .otp-all-confirmed-icon {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: rgba(48,209,88,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .otp-all-confirmed-text {
+      font-size: 22px;
+      font-weight: 600;
+      color: #f5f5f7;
+      margin-bottom: 8px;
+    }
+    .otp-all-confirmed-sub {
+      font-size: 15px;
+      color: rgba(255,255,255,0.45);
+      margin-bottom: 32px;
+    }
+  </style>
+</head>
+<body class="otp-body">
+  <div class="otp-container">
+    <div class="otp-brand">
+      <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="8" width="24" height="16" rx="3"/>
+        <path d="M10 16h12M10 21h8"/>
+      </svg>
+      <h1 id="conjunto-nombre">SorteoParking</h1>
+      <p id="consejero-nombre">Consejero</p>
+    </div>
+
+    <!-- Loading state inicial -->
+    <div id="loading-state" class="text-center" style="padding: 48px 20px;">
+      <div class="skeleton" style="width:200px;height:20px;margin:0 auto 16px;border-radius:4px;"></div>
+      <div class="skeleton" style="width:140px;height:14px;margin:0 auto;border-radius:4px;"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="text-center" style="padding:48px 20px;display:none;">
+      <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="rgba(196,30,58,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:16px">
+        <circle cx="24" cy="24" r="18"/>
+        <path d="M24 16v8M24 28v1"/>
+      </svg>
+      <h2 style="font-size:20px;font-weight:600;color:#f5f5f7;margin-bottom:8px">Enlace inválido o expirado</h2>
+      <p style="font-size:15px;color:rgba(255,255,255,0.45)">Este enlace de confirmación ya no es válido. Solicite un nuevo OTP al administrador.</p>
+    </div>
+
+    <!-- OTP Input State -->
+    <div id="otp-state" style="display:none;">
+      <!-- Progress bar -->
+      <p class="otp-progress-label" id="progress-label">Consejeros confirmados: 0/5</p>
+      <div class="otp-progress" style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:24px;">
+        <div class="otp-progress-bar" id="progress-bar" style="width:0%"></div>
+      </div>
+
+      <!-- Cards -->
+      <div class="otp-cards" id="consejeros-cards"></div>
+
+      <!-- OTP digits -->
+      <div class="otp-input-area" id="otp-input-area">
+        <p style="font-size:15px;color:rgba(255,255,255,0.65);margin-bottom:20px">
+          Ingrese el código OTP de 6 dígitos enviado a su correo
+        </p>
+        <div class="otp-input-group" id="otp-digits">
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" autocomplete="one-time-code" aria-label="Digito 1" />
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" aria-label="Digito 2" />
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" aria-label="Digito 3" />
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" aria-label="Digito 4" />
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" aria-label="Digito 5" />
+          <input class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" aria-label="Digito 6" />
+        </div>
+        <p id="otp-error" style="font-size:13px;color:#c41e3a;margin-top:12px;display:none;">Código incorrecto. Intente nuevamente.</p>
+        <button id="otp-submit" class="otp-submit" disabled>Confirmar OTP</button>
+        <p class="otp-timer" id="otp-timer">El código expira en 30:00</p>
+      </div>
+    </div>
+
+    <!-- All confirmed state -->
+    <div id="all-confirmed-state" class="otp-all-confirmed" style="display:none;">
+      <div class="otp-all-confirmed-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#30d158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 12l4 4 8-8"/>
+        </svg>
+      </div>
+      <p class="otp-all-confirmed-text">Todos los consejeros confirmaron</p>
+      <p class="otp-all-confirmed-sub">El sorteo se ejecutará automáticamente. Recibirá una notificación con los resultados.</p>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const params = new URLSearchParams(window.location.hash.replace('#', '?'));
+      const token = params.get('t');
+      const sorteoId = params.get('sid');
+      const errorEl = document.getElementById('error-state');
+      const loadingEl = document.getElementById('loading-state');
+      const otpStateEl = document.getElementById('otp-state');
+      const allConfirmedEl = document.getElementById('all-confirmed-state');
+
+      if (!token || !sorteoId || !/^\d+$/.test(sorteoId)) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = '';
+        return;
+      }
+
+      // OTP digit auto-advance
+      const digits = document.querySelectorAll('.otp-digit');
+      const submitBtn = document.getElementById('otp-submit');
+      const otpErrorEl = document.getElementById('otp-error');
+
+      digits.forEach((input, idx) => {
+        input.addEventListener('input', function() {
+          this.value = this.value.replace(/[^0-9]/g, '').slice(0, 1);
+          if (this.value.length === 1) {
+            this.classList.add('filled');
+            if (idx < digits.length - 1) digits[idx + 1].focus();
+          } else {
+            this.classList.remove('filled');
+          }
+          updateSubmitState();
+          otpErrorEl.style.display = 'none';
+        });
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Backspace' && !this.value && idx > 0) {
+            digits[idx - 1].focus();
+            digits[idx - 1].value = '';
+            digits[idx - 1].classList.remove('filled');
+            updateSubmitState();
+          }
+          if (e.key === 'Enter' && !submitBtn.disabled) submitBtn.click();
+        });
+        // Paste support
+        input.addEventListener('paste', function(e) {
+          e.preventDefault();
+          const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+          if (paste.length === 6) {
+            digits.forEach((d, i) => { d.value = paste[i]; d.classList.add('filled'); });
+            digits[5].focus();
+            updateSubmitState();
+          }
+        });
+      });
+
+      function getOtpValue() {
+        return Array.from(digits).map(d => d.value).join('');
+      }
+
+      function updateSubmitState() {
+        submitBtn.disabled = getOtpValue().length !== 6;
+      }
+
+      // Fetch sorteo info
+      let fetchTimer = null;
+      let timerInterval = null;
+      let sesionId = null;
+      let expiraEn = null;
+
+      async function fetchEstado() {
+        try {
+          const res = await fetch('/sorteos/' + sorteoId + '/otp/estado?token_enlace=' + encodeURIComponent(token));
+          if (!res.ok) {
+            if (res.status === 404) {
+              loadingEl.style.display = 'none';
+              errorEl.style.display = '';
+              clearInterval(fetchTimer);
+              return;
+            }
+            return;
+          }
+          const data = await res.json();
+
+          // Store session info
+          if (data.sesion_id) sesionId = data.sesion_id;
+          if (data.expira_en) expiraEn = new Date(data.expira_en + 'Z');
+
+          // Show OTP state
+          loadingEl.style.display = 'none';
+          otpStateEl.style.display = '';
+
+          // Update progress
+          const confirmados = data.confirmados || 0;
+          const total = data.total || 5;
+          document.getElementById('progress-label').textContent = 'Consejeros confirmados: ' + confirmados + '/' + total;
+          document.getElementById('progress-bar').style.width = (confirmados / total * 100) + '%';
+          if (confirmados === total) {
+            document.getElementById('progress-bar').classList.add('complete');
+          }
+
+          // Cards
+          const cardsContainer = document.getElementById('consejeros-cards');
+          if (data.consejeros) {
+            cardsContainer.innerHTML = data.consejeros.map(c => `
+              <div class="otp-card ${c.estado === 'CONFIRMADO' ? 'confirmed' : c.estado === 'EXPIRADO' ? 'expired' : ''}">
+                <div class="otp-card-name">${escHtml(c.nombre)}</div>
+                <div class="otp-card-status">
+                  ${c.estado === 'CONFIRMADO' 
+                    ? '<span class="status-dot status-dot-green"></span> Confirmado'
+                    : c.estado === 'EXPIRADO'
+                    ? '<span class="status-dot status-dot-red"></span> Expirado'
+                    : '<span class="status-dot status-dot-gray"></span> Pendiente'}
+                </div>
+              </div>
+            `).join('');
+          }
+
+          // Check if current consejero already confirmed
+          if (data.mi_estado === 'CONFIRMADO') {
+            otpStateEl.innerHTML = `
+              <div class="otp-all-confirmed">
+                <div class="otp-all-confirmed-icon">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#30d158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 12l4 4 8-8"/>
+                  </svg>
+                </div>
+                <p class="otp-all-confirmed-text">OTP confirmado</p>
+                <p class="otp-all-confirmed-sub" style="margin-bottom:0">Su código ya fue verificado exitosamente.</p>
+              </div>
+            `;
+            return;
+          }
+
+          // Update timer
+          if (expiraEn) {
+            updateTimer();
+            clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+          }
+
+          // If all confirmed, show all-confirmed state after a moment
+          if (confirmados === total) {
+            setTimeout(() => {
+              otpStateEl.style.display = 'none';
+              allConfirmedEl.style.display = '';
+              clearInterval(fetchTimer);
+              clearInterval(timerInterval);
+            }, 1500);
+          }
+        } catch(e) {}
+      }
+
+      function updateTimer() {
+        const el = document.getElementById('otp-timer');
+        if (!expiraEn) return;
+        const diff = Math.max(0, Math.floor((expiraEn - new Date()) / 1000));
+        const min = String(Math.floor(diff / 60)).padStart(2, '0');
+        const sec = String(diff % 60).padStart(2, '0');
+        el.textContent = 'El código expira en ' + min + ':' + sec;
+        if (diff <= 0) {
+          el.textContent = 'Código expirado';
+          submitBtn.disabled = true;
+        }
+      }
+
+      function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+      // Submit OTP
+      submitBtn.addEventListener('click', async () => {
+        const otp = getOtpValue();
+        if (otp.length !== 6) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verificando...';
+        otpErrorEl.style.display = 'none';
+
+        try {
+          const res = await fetch('/sorteos/' + sorteoId + '/otp/confirmar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Sorteo-Otp-Token': token },
+            body: JSON.stringify({ codigo: otp }),
+          });
+
+          if (res.ok) {
+            // Success - show confirmed state
+            otpStateEl.innerHTML = `
+              <div class="otp-all-confirmed">
+                <div class="otp-all-confirmed-icon">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#30d158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 12l4 4 8-8"/>
+                  </svg>
+                </div>
+                <p class="otp-all-confirmed-text">OTP confirmado exitosamente</p>
+                <p class="otp-all-confirmed-sub">Espere mientras los demás consejeros confirman.</p>
+              </div>
+            `;
+            clearInterval(fetchTimer);
+            clearInterval(timerInterval);
+            // Continue polling to show all-confirmed state
+            fetchTimer = setInterval(fetchEstado, 2000);
+            setTimeout(fetchEstado, 1000);
+          } else {
+            // Error
+            const data = await res.json().catch(() => ({}));
+            otpErrorEl.textContent = data.detail || 'Código incorrecto. Intente nuevamente.';
+            otpErrorEl.style.display = '';
+            digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
+            digits[0].focus();
+            submitBtn.disabled = true;
+          }
+        } catch(e) {
+          otpErrorEl.textContent = 'Error de conexión';
+          otpErrorEl.style.display = '';
+        }
+        submitBtn.textContent = 'Confirmar OTP';
+      });
+
+      // Start polling
+      fetchTimer = setInterval(fetchEstado, 3000);
+      fetchEstado();
+    })();
+  </script>
+</body>
+</html>

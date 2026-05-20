@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+openpyxl
+python-multipart
+argon2-cffi
+slowapi
+python-dotenv
+pandas
+python-docx
