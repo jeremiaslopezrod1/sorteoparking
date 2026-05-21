@@ -3,7 +3,7 @@ import requests
 import sys
 import json
 
-BASE = 'http://127.0.0.1:8770'
+BASE = 'http://127.0.0.1:8772'
 ok = 0
 fail = 0
 

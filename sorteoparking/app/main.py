@@ -34,16 +34,32 @@ async def tenant_auth_middleware(request: Request, call_next):
         # Excluir rutas de autenticación y administración global del middleware de tenant
         if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/"):
             request.state.tenant_id = None
-            return await call_next(request)
+            response = await call_next(request)
+            # Inyectar header de diagnostico en respuestas de error de admin
+            if response.status_code >= 400:
+                response.headers["X-Auth-Path"] = "admin_router"
+                response.headers["X-Auth-Status"] = str(response.status_code)
+            return response
             
         auth_ctx = get_auth_context(request)
         request.state.tenant_id = auth_ctx.tenant_id
     except Exception as exc:  # HTTPException incluida
         status_code = getattr(exc, "status_code", 401)
         detail = getattr(exc, "detail", "No autorizado")
-        return JSONResponse(status_code=status_code, content={"detail": detail})
+        exc_type = type(exc).__name__
+        # Loggear para diagnostico en servidor
+        logger.warning(
+            "AUTH_MIDDLEWARE_ERROR | path=%s | exc_type=%s | status=%s | detail=%s",
+            request.url.path, exc_type, status_code, str(detail)[:100]
+        )
+        response = JSONResponse(status_code=status_code, content={"detail": detail})
+        response.headers["X-Auth-Path"] = "middleware_catch"
+        response.headers["X-Auth-Exc"] = exc_type
+        response.headers["X-Auth-Status"] = str(status_code)
+        return response
 
-    return await call_next(request)
+    response = await call_next(request)
+    return response
 
 
 def _backfill_tenant_slugs() -> None:

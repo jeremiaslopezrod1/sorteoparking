@@ -15,7 +15,21 @@ from app.models.log import LogAuditoria
 
 
 def _super_admin_bearer(request: Request):
-    """Valida token Bearer de SUPER_ADMIN (SDD §5.1) o sesion por cookie."""
+    """Valida token Bearer de SUPER_ADMIN (SDD §5.1) o sesion por cookie.
+    
+    En cada fallo, incluye cabecera X-Auth-Fail con el codigo de error.
+    En exito, no modifica headers (el endpoint los maneja).
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    
+    # 0. Log de entrada para diagnostico
+    cookies_list = list(request.cookies.keys())
+    _log.info(
+        "AUTH_ENTRY | path=%s | method=%s | cookies=%s",
+        request.url.path, request.method, cookies_list
+    )
+    
     # 1. Intentar Authorization: Bearer (para API/curl/cli)
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -29,23 +43,39 @@ def _super_admin_bearer(request: Request):
     # 2. Intentar sesion por cookie admin_session (para frontend)
     session_id = request.cookies.get("admin_session")
     if not session_id:
+        _log.warning(
+            "AUTH_FAIL | code=A1 | path=%s | cookies_enviadas=%s",
+            request.url.path, cookies_list
+        )
         raise HTTPException(status_code=403, detail="[A1] Sin cookie admin_session")
 
     from app.core.session_store import session_store
     token_hash = session_store.get_session(session_id)
     if not token_hash:
+        _log.warning(
+            "AUTH_FAIL | code=A2 | path=%s | session_id=%s... | sesion_no_encontrada_en_bd",
+            request.url.path, session_id[:8]
+        )
         raise HTTPException(
             status_code=403,
             detail="[A2] Sesion no encontrada en BD (expiro o no se creo). Vuelva a iniciar sesion."
         )
 
     if not super_admin_config.super_admin_token:
+        _log.error("AUTH_FAIL | code=A3 | SUPER_ADMIN_TOKEN no configurado en servidor")
         raise HTTPException(status_code=500, detail="[A3] SUPER_ADMIN_TOKEN no configurado en servidor")
 
     expected_hash = hashlib.sha256(
         super_admin_config.super_admin_token.encode("utf-8")
     ).hexdigest()
     if not hmac.compare_digest(token_hash, expected_hash):
+        _log.warning(
+            "AUTH_FAIL | code=A4 | path=%s | session_id=%s... | hash_mismatch | "
+            "db_hash=%s... | expected_hash=%s...",
+            request.url.path, session_id[:8],
+            token_hash[:16] if token_hash else "None",
+            expected_hash[:16]
+        )
         raise HTTPException(
             status_code=403,
             detail="[A4] Token hash no coincide (cambio SUPER_ADMIN_TOKEN?). Vuelva a iniciar sesion."
@@ -57,9 +87,6 @@ def _super_admin_bearer(request: Request):
         if not csrf_header:
             # Fallback temporal: si la sesion es valida y el Referer/Origin es same-origin,
             # permitir CON ADVERTENCIA. Esto NO debe ser permanente.
-            # TODO: eliminar este fallback cuando el frontend envie X-CSRF-Token correctamente.
-            import logging
-            _log = logging.getLogger(__name__)
             referer = request.headers.get("Referer", "")
             origin = request.headers.get("Origin", "")
             base_url = str(request.base_url).rstrip("/")
@@ -79,16 +106,33 @@ def _super_admin_bearer(request: Request):
                     referer[:50] if referer else "-"
                 )
                 return super_admin_config.super_admin_token
+            _log.warning(
+                "AUTH_FAIL | code=A6 | path=%s | session_id=%s... | sin_csrf_header | "
+                "origin=%s | referer=%s | base_url=%s",
+                request.url.path, session_id[:8],
+                origin[:50] if origin else "-",
+                referer[:50] if referer else "-",
+                base_url[:50]
+            )
             raise HTTPException(
                 status_code=403,
                 detail="[A6] Falta header X-CSRF-Token y no es same-origin."
             )
         if not session_store.validate_csrf(session_id, csrf_header):
+            _log.warning(
+                "AUTH_FAIL | code=A7 | path=%s | session_id=%s... | "
+                "csrf_header=%s... | csrf_no_valido_en_bd",
+                request.url.path, session_id[:8], csrf_header[:8]
+            )
             raise HTTPException(
                 status_code=403,
                 detail=f"[A7] CSRF invalido (validado contra BD). header={csrf_header[:8]}... Vuelva a iniciar sesion."
             )
 
+    _log.info(
+        "AUTH_OK | path=%s | method=%s | session_id=%s...",
+        request.url.path, request.method, session_id[:8]
+    )
     return super_admin_config.super_admin_token
 
 
