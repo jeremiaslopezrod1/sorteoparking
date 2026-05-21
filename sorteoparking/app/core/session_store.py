@@ -76,21 +76,23 @@ class SessionStore:
         self.schedule_cleanup()
 
     def _get_db(self):
-        db = self._Session()
-        try:
-            yield db
-        finally:
-            db.close()
+        """Crea una nueva sesion SQLAlchemy.
+        
+        Antes usaba generador con yield, pero el finally del generador
+        provocaba double-close y OperationalError en Render.
+        Ahora es un factory simple: el caller es responsable de close().
+        """
+        return self._Session()
 
     def create_session(self, session_id: str, token: str, csrf_token: str = "") -> None:
         """Asocia un ID de sesion con un SUPER_ADMIN_TOKEN."""
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        # Si no se pasa csrf_token, usar token_hash[:32] como fallback
         if not csrf_token:
             csrf_token = token_hash[:32]
 
-        db = next(self._get_db())
+        db = None
         try:
+            db = self._get_db()
             db.query(AdminSession).filter(
                 AdminSession.token_hash == token_hash,
                 AdminSession.revoked_at.is_(None),
@@ -106,15 +108,24 @@ class SessionStore:
             db.commit()
             logger.info("Sesion creada: %s (expira en 60 min)", session_id[:8])
         except Exception as e:
-            db.rollback()
+            if db:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             logger.error("Error creando sesion: %s", e)
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def get_session(self, session_id: str) -> Optional[str]:
         """Recupera el token_hash asociado a una sesion."""
-        db = next(self._get_db())
+        db = None
         try:
+            db = self._get_db()
             ses = db.query(AdminSession).filter(
                 AdminSession.session_id == session_id,
                 AdminSession.revoked_at.is_(None),
@@ -127,14 +138,19 @@ class SessionStore:
             logger.error("Error leyendo sesion: %s", e)
             return None
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def validate_csrf(self, session_id: str, csrf_header: str) -> bool:
         """Valida el token CSRF contra el almacenado en BD."""
         if not csrf_header:
             return False
-        db = next(self._get_db())
+        db = None
         try:
+            db = self._get_db()
             ses = db.query(AdminSession).filter(
                 AdminSession.session_id == session_id,
                 AdminSession.revoked_at.is_(None),
@@ -147,26 +163,40 @@ class SessionStore:
             logger.error("Error validando CSRF: %s", e)
             return False
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def delete_session(self, session_id: str) -> None:
         """Revoca una sesion."""
-        db = next(self._get_db())
+        db = None
         try:
+            db = self._get_db()
             db.query(AdminSession).filter(
                 AdminSession.session_id == session_id
             ).update({"revoked_at": datetime.now(timezone.utc)})
             db.commit()
         except Exception as e:
-            db.rollback()
+            if db:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             logger.error("Error revocando sesion: %s", e)
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def _limpiar_expiradas(self):
         """Elimina sesiones expiradas o revocadas."""
-        db = next(self._get_db())
+        db = None
         try:
+            db = self._get_db()
             deleted = db.query(AdminSession).filter(
                 (AdminSession.expires_at < datetime.now(timezone.utc))
                 | (AdminSession.revoked_at.isnot(None))
@@ -175,9 +205,18 @@ class SessionStore:
             if deleted:
                 logger.info("Limpieza: %d sesiones eliminadas", deleted)
         except Exception as e:
+            if db:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             logger.error("Error limpiando sesiones: %s", e)
         finally:
-            db.close()
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
 
     def schedule_cleanup(self):
