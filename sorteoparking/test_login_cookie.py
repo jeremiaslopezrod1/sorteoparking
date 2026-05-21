@@ -3,7 +3,7 @@ import requests
 import sys
 import json
 
-BASE = 'http://127.0.0.1:8769'
+BASE = 'http://127.0.0.1:8770'
 ok = 0
 fail = 0
 
@@ -73,7 +73,19 @@ if r.status_code == 200:
             check('  slug presente', bool(data.get('slug')), str(data.get('slug','')))
             print(f'  Tenant creado: {data.get("id","")[:16]}... slug={data.get("slug")}')
         
-        # 6. POST /admin/tenants SIN CSRF (debe fallar)
+        # 6. GET /auth/session-check (diagnostico)
+        print('\n--- GET session-check ---')
+        r = session.get(f'{BASE}/auth/session-check')
+        check('GET /auth/session-check -> 200', r.status_code == 200, f'status={r.status_code}')
+        if r.status_code == 200:
+            diag = r.json()
+            check('  admin_session_presente', diag.get('admin_session_presente') == True)
+            check('  sesion_valida_en_bd', diag.get('sesion_valida_en_bd') == True)
+            check('  csrf_cookie_presente', diag.get('csrf_cookie_presente') == True)
+            print(f'  cookies_recibidas: {diag.get("cookies_recibidas")}')
+            print(f'  es_https: {diag.get("es_https")}')
+        
+        # 7. POST /admin/tenants SIN CSRF (debe fallar)
         print('\n--- POST sin CSRF (debe fallar) ---')
         r2 = session.post(f'{BASE}/admin/tenants',
             json={'nombre': 'SIN CSRF', 'municipio': 'Cali', 'email_admin': 'x@x.com'}

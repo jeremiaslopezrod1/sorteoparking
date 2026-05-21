@@ -84,21 +84,21 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     for old_path in ("/admin", "/"):
         response.delete_cookie(
             key="admin_session", path=old_path,
-            secure=is_secure, samesite="strict"
+            secure=is_secure, samesite="lax"
         )
         response.delete_cookie(
             key="csrf_token", path=old_path,
-            secure=is_secure, samesite="strict"
+            secure=is_secure, samesite="lax"
         )
 
     # 7. Configurar cookies
-    # admin_session: HttpOnly, SameSite=strict
+    # admin_session: HttpOnly, SameSite=Lax (permite navegacion desde enlaces externos)
     response.set_cookie(
         key="admin_session",
         value=session_id,
         httponly=True,
         secure=is_secure,
-        samesite="strict",
+        samesite="lax",
         max_age=3600, # 60 minutos
         path="/"
     )
@@ -109,7 +109,7 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         value=csrf_token,
         httponly=False,
         secure=is_secure,
-        samesite="strict",
+        samesite="lax",
         max_age=3600,
         path="/"
     )
@@ -123,6 +123,55 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     }
 
 
+@router.get("/session-check")
+async def session_check(request: Request):
+    """Endpoint de diagnostico: verifica si las cookies de sesion viajan correctamente.
+    
+    NO modifica estado. Retorna informacion segura sobre la sesion actual.
+    Util para debugging de problemas de autenticacion en produccion.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    cookies_presentes = list(request.cookies.keys())
+    session_id = request.cookies.get("admin_session")
+    csrf_cookie = request.cookies.get("csrf_token")
+    
+    # Info de headers relevante
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+    referer = request.headers.get("Referer", "")
+    origin = request.headers.get("Origin", "")
+    
+    result = {
+        "cookies_recibidas": cookies_presentes,
+        "admin_session_presente": session_id is not None,
+        "csrf_cookie_presente": csrf_cookie is not None,
+        "es_https": (request.url.scheme == "https") or (forwarded_proto == "https"),
+        "url_scheme": request.url.scheme,
+        "forwarded_proto": forwarded_proto[:20] if forwarded_proto else "",
+        "base_url": str(request.base_url),
+    }
+    
+    if session_id:
+        # Validar sesion contra BD
+        token_hash = session_store.get_session(session_id)
+        result["sesion_valida_en_bd"] = token_hash is not None
+        result["session_id_fragmento"] = session_id[:8] + "..."
+    else:
+        result["sesion_valida_en_bd"] = False
+    
+    # Loggear para diagnostico en servidor
+    logger.info(
+        "SESSION-CHECK | cookies=%s | session=%s | bd=%s | https=%s",
+        cookies_presentes,
+        session_id[:8] + "..." if session_id else "ninguna",
+        result["sesion_valida_en_bd"],
+        result["es_https"]
+    )
+    
+    return result
+
+
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(request: Request, response: Response):
     """Cierra la sesión del superadmin."""
@@ -131,10 +180,10 @@ async def logout(request: Request, response: Response):
     for old_path in ("/admin", "/"):
         response.delete_cookie(
             key="admin_session", path=old_path,
-            secure=is_secure, samesite="strict"
+            secure=is_secure, samesite="lax"
         )
         response.delete_cookie(
             key="csrf_token", path=old_path,
-            secure=is_secure, samesite="strict"
+            secure=is_secure, samesite="lax"
         )
     return {"ok": True, "message": "Sesion cerrada"}

@@ -55,7 +55,11 @@ def _super_admin_bearer(request: Request):
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         csrf_header = request.headers.get("X-CSRF-Token")
         if not csrf_header:
-            # Fallback: si la sesion es valida y el Referer es same-origin, permitir
+            # Fallback temporal: si la sesion es valida y el Referer/Origin es same-origin,
+            # permitir CON ADVERTENCIA. Esto NO debe ser permanente.
+            # TODO: eliminar este fallback cuando el frontend envie X-CSRF-Token correctamente.
+            import logging
+            _log = logging.getLogger(__name__)
             referer = request.headers.get("Referer", "")
             origin = request.headers.get("Origin", "")
             base_url = str(request.base_url).rstrip("/")
@@ -64,6 +68,16 @@ def _super_admin_bearer(request: Request):
                 (referer and referer.startswith(base_url))
             )
             if is_same_origin:
+                _log.warning(
+                    "CSRF_BYPASS_SAME_ORIGIN | session=%s... | method=%s | path=%s | "
+                    "origin=%s | referer=%s — El frontend NO envio X-CSRF-Token. "
+                    "Verificar getCsrfToken() en superadmin.html.",
+                    session_id[:8] if session_id else "?",
+                    request.method,
+                    request.url.path,
+                    origin[:50] if origin else "-",
+                    referer[:50] if referer else "-"
+                )
                 return super_admin_config.super_admin_token
             raise HTTPException(
                 status_code=403,
