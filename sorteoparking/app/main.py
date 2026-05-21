@@ -18,6 +18,7 @@ import logging
 from app.scripts.backup_db import ejecutar_ciclo_backup
 from app.core.scheduler import scheduler_diario
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.session_store import init_session_table, session_store
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,14 @@ async def startup() -> None:
     except Exception as e:
         logger.warning("Error creando tablas: %s - continuando con short circuit", e)
         return  # Short circuit - health check responderá pero sin DB
+    
+    # Configurar session_store con la misma BD (PostgreSQL o SQLite)
+    try:
+        init_session_table(engine)
+        session_store.configure(engine)
+        logger.info("SessionStore configurado con BD principal")
+    except Exception as e:
+        logger.error("Error configurando SessionStore: %s", e)
     
     is_sqlite = "sqlite" in str(engine.url)
     

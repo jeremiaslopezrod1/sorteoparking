@@ -1,7 +1,7 @@
-"""Almacenamiento de sesiones en SQLite (SDD §13.11).
+"""Almacenamiento de sesiones (SDD §13.11).
 
-En v1.5 las sesiones se persisten en SQLite en lugar de diccionario en memoria.
-Esto permite que los reinicios de Railway no invaliden sesiones activas.
+Usa la MISMA base de datos que la app principal (PostgreSQL o SQLite).
+NO crea archivo SQLite separado — eso rompia en Render por filesystem read-only.
 """
 
 import hashlib
@@ -12,7 +12,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Text, create_engine
+from sqlalchemy import Column, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,10 @@ _SessionBase = declarative_base()
 
 
 class AdminSession(_SessionBase):
-    """Tabla admin_sessions (SDD §13.11)."""
+    """Tabla admin_sessions (SDD §13.11).
+    
+    Se crea en la misma DB que las demas tablas (PostgreSQL o SQLite).
+    """
 
     __tablename__ = "admin_sessions"
 
@@ -33,11 +36,23 @@ class AdminSession(_SessionBase):
     revoked_at = Column(DateTime, nullable=True)
 
 
-class SessionStore:
-    """Almacenamiento de sesiones en SQLite.
+def init_session_table(engine) -> None:
+    """Crea la tabla admin_sessions en la BD principal.
+    
+    Debe llamarse durante startup, despues de crear el engine.
+    """
+    try:
+        _SessionBase.metadata.create_all(bind=engine)
+        logger.info("Tabla admin_sessions verificada/creada")
+    except Exception as e:
+        logger.warning("No se pudo crear admin_sessions: %s", e)
 
-    Singleton. Crea su propia base de datos SQLite para no depender
-    de la base de datos principal del sistema.
+
+class SessionStore:
+    """Almacenamiento de sesiones en la BD principal.
+
+    Singleton. Usa la misma conexion que el resto de la app.
+    El engine se inyecta via configure() antes del primer uso.
     """
 
     _instance = None
@@ -48,41 +63,33 @@ class SessionStore:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super(SessionStore, cls).__new__(cls)
-                    cls._instance._init_db()
+                    cls._instance._engine = None
+                    cls._instance._Session = None
         return cls._instance
 
-    def _init_db(self):
-        """Inicializa la base de datos de sesiones."""
-        # Render: /data/ persiste entre deploys (si existe disco).
-        # Fallback a directorio de la app + env var ADMIN_SESSIONS_PATH.
-        _db_dir = os.environ.get("ADMIN_SESSIONS_DIR", "")
-        if _db_dir and os.path.isdir(_db_dir):
-            pass
-        elif os.path.isdir("/data"):
-            _db_dir = "/data"
-        else:
-            _db_dir = os.path.dirname(os.path.abspath(__file__))
-        _admin_db_path = os.path.join(_db_dir, "admin_sessions.db")
-        self._engine = create_engine(
-            f"sqlite:///{_admin_db_path}",
-            connect_args={"check_same_thread": False, "timeout": 3},
-        )
-        _SessionBase.metadata.create_all(bind=self._engine)
-        self._Session = sessionmaker(bind=self._engine)
+    def configure(self, engine) -> None:
+        """Inyecta el engine de la BD principal (PostgreSQL o SQLite).
+        
+        Debe llamarse durante startup, despues de crear el engine.
+        """
+        self._engine = engine
+        self._Session = sessionmaker(bind=engine)
         try:
             self._limpiar_expiradas()
         except Exception:
-            pass  # Primera ejecución, tabla recién creada
+            pass
         self.schedule_cleanup()
 
     def _get_db(self):
-        """Crea una nueva sesion SQLAlchemy.
-        
-        Antes usaba generador con yield, pero el finally del generador
-        provocaba double-close y OperationalError en Render.
-        Ahora es un factory simple: el caller es responsable de close().
-        """
-        return self._Session()
+        """Crea una nueva sesion SQLAlchemy."""
+        if self._Session is None:
+            logger.error("SessionStore._get_db() llamado sin configure(engine) previo")
+            raise RuntimeError("SessionStore no configurado. Llamar configure(engine) en startup.")
+        try:
+            return self._Session()
+        except Exception as e:
+            logger.error("SessionStore._get_db() error creando sesion: %s", e)
+            raise
 
     def create_session(self, session_id: str, token: str, csrf_token: str = "") -> None:
         """Asocia un ID de sesion con un SUPER_ADMIN_TOKEN."""
