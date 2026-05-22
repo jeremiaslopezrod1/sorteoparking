@@ -17,8 +17,8 @@ if DATABASE_URL.startswith("sqlite"):
     _pool_size = 1      # SQLite: single-writer
     _max_overflow = 0    # SQLite: no overflow
 elif DATABASE_URL.startswith("postgresql"):
-    # Render PostgreSQL requiere SSL (SDD §3.6)
-    _connect_args = {"sslmode": "require"}
+    # Render PostgreSQL — probar sin SSL primero
+    _connect_args = {"sslmode": "disable"}
 
 engine = create_engine(
     DATABASE_URL,
