@@ -6,12 +6,15 @@ No auth, no cookies, no SessionStore, no middleware.
 
 import logging
 import secrets
+import smtplib
 import traceback
 from datetime import datetime, timedelta, timezone
+from email.mime.text import MIMEText
 
 from fastapi import APIRouter
 from sqlalchemy import text
 
+from app.core.config import email_config
 from app.db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
