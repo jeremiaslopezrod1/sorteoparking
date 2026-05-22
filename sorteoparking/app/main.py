@@ -91,13 +91,16 @@ async def startup() -> None:
         )
         tables_ok = False
     
-    # Intentar crear admin_sessions aunque Base.metadata.create_all haya fallado
+    # FASE 2: Inicializar SessionStore con SQLite propio en /tmp/
+    # (independiente de la BD principal — no requiere PostgreSQL)
     try:
-        admin_session_table_ok = init_session_table(engine)
+        admin_session_table_ok = init_session_table()
         logger.warning(
             "STARTUP: init_session_table result=%s (tables_ok=%s)",
             admin_session_table_ok, tables_ok
         )
+        if not admin_session_table_ok:
+            logger.error("STARTUP: admin_sessions NO disponible — sesiones fallaran")
     except Exception as e:
         logger.error("STARTUP: init_session_table exception: %s", e)
         admin_session_table_ok = False
@@ -105,12 +108,11 @@ async def startup() -> None:
     if not tables_ok:
         logger.warning(
             "STARTUP: tablas principales NO disponibles - "
-            "sesiones pueden fallar. Health check respondera."
+            "funcionalidad de negocio limitada. Health check respondera."
         )
     
-    # FASE 2: Configurar SessionStore (SIEMPRE intentar, no depende de tablas)
     try:
-        session_store.configure(engine)
+        session_store.configure()
         logger.warning("STARTUP: session_store.configure OK")
         
         # Verificar que SessionStore funcione creando una sesion de prueba

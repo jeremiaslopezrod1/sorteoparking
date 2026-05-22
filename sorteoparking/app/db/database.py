@@ -1,21 +1,10 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import NullPool
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 from app.core.config import deploy_config
 
 DATABASE_URL = deploy_config.database_url
-
-# Render PostgreSQL: forzar sslmode en la URL porque connect_args
-# son pisados si la URL ya tiene parametros SSL
-if DATABASE_URL.startswith("postgresql"):
-    parsed = urlparse(DATABASE_URL)
-    params = parse_qs(parsed.query, keep_blank_values=True)
-    # Forzar sslmode=disable para diagnosticar si el servidor acepta no-SSL
-    params["sslmode"] = ["disable"]
-    new_query = urlencode(params, doseq=True)
-    DATABASE_URL = urlunparse(parsed._replace(query=new_query))
 
 _connect_args = {}
 _pool_size = 5     # PostgreSQL: hasta 5 conexiones simultaneas
