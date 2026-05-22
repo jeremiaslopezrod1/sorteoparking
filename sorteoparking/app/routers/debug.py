@@ -4,6 +4,7 @@ Aislar: INSERT + COMMIT + SELECT directo.
 No auth, no cookies, no SessionStore, no middleware.
 """
 
+import logging
 import secrets
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -13,7 +14,42 @@ from sqlalchemy import text
 
 from app.db.database import SessionLocal
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/debug", tags=["debug"])
+
+
+@router.get("/db-ping")
+def db_ping():
+    """SELECT 1 — ¿responde PostgreSQL? Ultra simple, sin auth."""
+    db = None
+
+    try:
+        logger.warning("DB PING attempt")
+        db = SessionLocal()
+        logger.warning("DB PING session created")
+
+        result = db.execute(text("SELECT 1")).fetchone()
+        logger.warning("DB PING success | result=%s", result[0] if result else "None")
+
+        return {
+            "ok": True,
+            "result": result[0] if result else None,
+        }
+
+    except Exception as e:
+        logger.warning("DB PING failed: %s", e)
+
+        return {
+            "ok": False,
+            "error_type": type(e).__name__,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+    finally:
+        if db:
+            db.close()
 
 
 @router.post("/session-test")

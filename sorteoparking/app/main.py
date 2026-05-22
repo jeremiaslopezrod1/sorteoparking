@@ -79,6 +79,12 @@ def _backfill_tenant_slugs() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    # CRÍTICO: Render redeploya y deja pools viejos.
+    # SQLAlchemy puede reutilizar conexiones SSL muertas.
+    logger.warning("DB startup: disposing stale pool...")
+    engine.dispose()
+    logger.warning("DB startup: pool disposed")
+
     # FASE 1: Creacion de tablas (Base + admin_sessions)
     tables_ok = True
     try:

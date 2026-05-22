@@ -1,37 +1,70 @@
+"""
+Database engine — PostgreSQL en Render, SQLite local.
+Hardened: pool_pre_ping, pool_recycle=180, sslmode=require,
+connect_timeout, echo_pool para diagnostico.
+"""
+
+import logging
+import os
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.pool import NullPool
 
-from app.core.config import deploy_config
+logger = logging.getLogger(__name__)
 
-DATABASE_URL = deploy_config.database_url
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sorteoparking.db")
 
-_connect_args = {}
-_pool_size = 5     # PostgreSQL: hasta 5 conexiones simultaneas
-_max_overflow = 10  # PostgreSQL: hasta 10 conexiones extra bajo demanda
-if DATABASE_URL.startswith("sqlite"):
-    _connect_args = {
-        "timeout": 30,
-        "check_same_thread": False,
-    }
-    _pool_size = 1      # SQLite: single-writer
-    _max_overflow = 0    # SQLite: no overflow
+# Render entrega postgres:// en vez de postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=_connect_args,
-    pool_pre_ping=True,
-    pool_size=_pool_size,
-    max_overflow=_max_overflow,
-    pool_recycle=1800,
-)
+if DATABASE_URL.startswith("postgresql"):
+    logger.warning("DB CONNECT: PostgreSQL detectado — configurando SSL")
+
+    engine = create_engine(
+        DATABASE_URL,
+
+        # CRÍTICO — evita conexiones zombie
+        pool_pre_ping=True,
+
+        # Reciclar conexiones antes que Render cierre SSL idle
+        pool_recycle=180,
+
+        # Pool razonable para produccion
+        pool_size=5,
+        max_overflow=2,
+
+        # Evitar waits infinitos
+        pool_timeout=30,
+
+        # Logging temporal diagnostico
+        echo_pool=True,
+
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 10,
+            "application_name": "sorteoparking",
+        },
+    )
+
+    logger.warning("DB CONNECT: engine PostgreSQL creado OK")
+
+else:
+    # SQLite solo local
+    logger.warning("DB CONNECT: SQLite detectado")
+
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
 def configurar_sqlite_wal():
     """Configura SQLite WAL mode y optimizaciones (SDD §3.6)."""
-    from sqlalchemy import inspect
     if not DATABASE_URL.startswith("sqlite"):
         return
     try:
@@ -40,7 +73,6 @@ def configurar_sqlite_wal():
             conn.execute(text("PRAGMA synchronous=NORMAL"))
             conn.execute(text("PRAGMA cache_size=10000"))
             conn.execute(text("PRAGMA foreign_keys=ON"))
-        # Verificar que WAL esté activo
         with engine.connect() as conn:
             result = conn.execute(text("PRAGMA journal_mode")).scalar()
     except Exception:
