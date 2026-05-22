@@ -7,8 +7,34 @@
     branch: main
     rootDir: sorteoparking
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port \
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: SUPER_ADMIN_USER
+        value: Michael
+      - key: SUPER_ADMIN_PASSWORD_HASH
+        sync: false
+      - key: SUPER_ADMIN_TOKEN
+        sync: false
+      - key: OTP_PEPPER
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
