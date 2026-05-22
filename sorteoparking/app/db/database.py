@@ -7,20 +7,25 @@ from app.core.config import deploy_config
 DATABASE_URL = deploy_config.database_url
 
 _connect_args = {}
-_sqlite_pool_size = 1  # SQLite is single-writer, pool > 1 causes contention
-_sqlite_overflow = 0
+_pool_size = 5     # PostgreSQL: hasta 5 conexiones simultaneas
+_max_overflow = 10  # PostgreSQL: hasta 10 conexiones extra bajo demanda
 if DATABASE_URL.startswith("sqlite"):
     _connect_args = {
         "timeout": 30,
         "check_same_thread": False,
     }
+    _pool_size = 1      # SQLite: single-writer
+    _max_overflow = 0    # SQLite: no overflow
+elif DATABASE_URL.startswith("postgresql"):
+    # Render PostgreSQL requiere SSL (SDD §3.6)
+    _connect_args = {"sslmode": "require"}
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=_connect_args,
     pool_pre_ping=True,
-    pool_size=_sqlite_pool_size,
-    max_overflow=_sqlite_overflow,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
     pool_recycle=1800,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
