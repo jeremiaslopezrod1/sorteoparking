@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.security import get_auth_context
 from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal
-from app.routers import admin, auth, catalogo as catalogo_router, publico, sorteos
+from app.routers import admin, auth, catalogo as catalogo_router, debug, publico, sorteos
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -33,7 +33,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 async def tenant_auth_middleware(request: Request, call_next):
     try:
         # Excluir rutas de autenticación y administración global del middleware de tenant
-        if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/"):
+        if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/debug/"):
             request.state.tenant_id = None
             response = await call_next(request)
             # Inyectar header de diagnostico en respuestas de error de admin
@@ -79,19 +79,49 @@ def _backfill_tenant_slugs() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    # FASE 1: Creacion de tablas (Base + admin_sessions)
+    tables_ok = True
     try:
         Base.metadata.create_all(bind=engine)
+        logger.warning("STARTUP: Base.metadata.create_all OK")
     except Exception as e:
-        logger.warning("Error creando tablas: %s - continuando con short circuit", e)
-        return  # Short circuit - health check responderá pero sin DB
+        logger.warning(
+            "STARTUP: Error creando tablas Base: %s - "
+            "continuando sin tablas principales", e
+        )
+        tables_ok = False
     
-    # Configurar session_store con la misma BD (PostgreSQL o SQLite)
+    # Intentar crear admin_sessions aunque Base.metadata.create_all haya fallado
     try:
-        init_session_table(engine)
-        session_store.configure(engine)
-        logger.info("SessionStore configurado con BD principal")
+        admin_session_table_ok = init_session_table(engine)
+        logger.warning(
+            "STARTUP: init_session_table result=%s (tables_ok=%s)",
+            admin_session_table_ok, tables_ok
+        )
     except Exception as e:
-        logger.error("Error configurando SessionStore: %s", e)
+        logger.error("STARTUP: init_session_table exception: %s", e)
+        admin_session_table_ok = False
+    
+    if not tables_ok:
+        logger.warning(
+            "STARTUP: tablas principales NO disponibles - "
+            "sesiones pueden fallar. Health check respondera."
+        )
+    
+    # FASE 2: Configurar SessionStore (SIEMPRE intentar, no depende de tablas)
+    try:
+        session_store.configure(engine)
+        logger.warning("STARTUP: session_store.configure OK")
+        
+        # Verificar que SessionStore funcione creando una sesion de prueba
+        try:
+            test_db = session_store._get_db()
+            test_db.close()
+            logger.warning("STARTUP: session_store._get_db() OK")
+        except Exception as test_e:
+            logger.error("STARTUP: session_store._get_db() test FAILED: %s", test_e)
+    except Exception as e:
+        logger.error("STARTUP: Error configurando SessionStore: %s", e)
     
     is_sqlite = "sqlite" in str(engine.url)
     
@@ -132,6 +162,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.include_router(debug.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(catalogo_router.router)
