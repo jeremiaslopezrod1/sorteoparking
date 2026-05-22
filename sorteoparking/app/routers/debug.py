@@ -195,20 +195,10 @@ Jarvis"""
     msg["To"] = destino
 
     try:
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=30) as smtp:
-                if user and password:
-                    smtp.login(user, password)
-                smtp.sendmail(from_addr, [destino], msg.as_string())
-        else:
-            with smtplib.SMTP(host, port, timeout=30) as smtp:
-                smtp.ehlo()
-                if port == 587:
-                    smtp.starttls()
-                    smtp.ehlo()
-                if user and password:
-                    smtp.login(user, password)
-                smtp.sendmail(from_addr, [destino], msg.as_string())
+        with smtplib.SMTP_SSL(host, 465, timeout=30) as smtp:
+            if user and password:
+                smtp.login(user, password)
+            smtp.sendmail(from_addr, [destino], msg.as_string())
 
         logger.warning("REPORT enviado a %s", destino)
         return {"ok": True, "sent_to": destino}
