@@ -48,3 +48,34 @@ def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
         logger.warning("Error enviando correo a %s: %s", destino, str(e))
         return False
 
+
+def enviar_reset_password(destino: str, reset_url: str) -> bool:
+    """Envía correo de recuperación de contraseña.
+
+    Args:
+        destino: email del SuperAdmin
+        reset_url: URL completa con token para reset
+
+    Returns:
+        True si se envió correctamente.
+    """
+    asunto = "SorteoParking — Recuperación de contraseña"
+    cuerpo = f"""Hola,
+
+Se solicitó restablecer la contraseña del panel SuperAdmin de SorteoParking.
+
+Para continuar, abre este enlace (válido por 15 minutos):
+
+{reset_url}
+
+Si no solicitaste este cambio, ignora este mensaje. El enlace expirará automáticamente.
+
+— SorteoParking"""
+
+    resultado = enviar_correo_texto(destino, asunto, cuerpo)
+    if resultado:
+        logger.warning("PASSWORD_RESET_EMAIL_SENT | destino=%s", destino)
+    else:
+        logger.error("PASSWORD_RESET_EMAIL_FAILED | destino=%s", destino)
+    return resultado
+

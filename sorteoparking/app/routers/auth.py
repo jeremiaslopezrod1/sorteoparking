@@ -19,8 +19,11 @@ def _get_client_ip(request) -> str:
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
-from app.core.config import super_admin_config
+from app.core.config import public_urls_config, super_admin_config
 from app.core.session_store import session_store
+from app.db.database import SessionLocal
+from app.models.password_reset import PasswordResetToken, SuperAdminCredentials
+from app.services.email_service import enviar_reset_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=_get_client_ip)
@@ -39,10 +42,28 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     navegadores ignoran Set-Cookie en respuestas sin body, rompiendo la sesion.
     """
     
-    # 1. Leer credenciales desde variables de entorno
+    # 1. Leer credenciales — BD primero, luego env var
+    import logging
+    logger = logging.getLogger(__name__)
+    
     stored_user = super_admin_config.super_admin_user
-    stored_hash = super_admin_config.super_admin_password_hash
     stored_token = super_admin_config.super_admin_token
+
+    # Intentar obtener password_hash de BD
+    db = SessionLocal()
+    try:
+        creds_db = SuperAdminCredentials.obtener(db)
+        stored_hash = creds_db.password_hash if creds_db else None
+        if stored_hash:
+            logger.info("AUTH LOGIN: usando password_hash de BD")
+        else:
+            stored_hash = super_admin_config.super_admin_password_hash
+            logger.info("AUTH LOGIN: usando password_hash de env var (BD vacia)")
+    except Exception as e:
+        logger.warning("AUTH LOGIN: error leyendo BD, usando env var: %s", e)
+        stored_hash = super_admin_config.super_admin_password_hash
+    finally:
+        db.close()
 
     # 2. Verificar usuario con tiempo constante
     user_ok = hmac.compare_digest(payload.username, stored_user)
@@ -192,3 +213,132 @@ async def logout(request: Request, response: Response):
             secure=is_secure, samesite="lax"
         )
     return {"ok": True, "message": "Sesion cerrada"}
+
+
+# ── RECUPERACIÓN DE CONTRASEÑA ──────────────────────────────────
+
+class RequestResetRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=120)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/request-password-reset", status_code=status.HTTP_200_OK)
+@limiter.limit("3/15minutes")
+async def request_password_reset(request: Request, payload: RequestResetRequest):
+    """Solicita recuperación de contraseña.
+
+    Siempre retorna OK aunque el email no exista (anti-enumeración).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    email = payload.email.strip().lower()
+    logger.warning("PASSWORD_RESET_REQUEST | email=%s", email[:3] + "***")
+
+    # Verificar si el email coincide con el configurado
+    admin_email = super_admin_config.super_admin_email.strip().lower()
+
+    if email != admin_email:
+        # Email no coincide — mismo mensaje para evitar enumeración
+        logger.warning("PASSWORD_RESET_REQUEST | email_no_coincide")
+        await asyncio.sleep(random.uniform(0.2, 0.4))
+        return {
+            "ok": True,
+            "message": "Si el correo existe, se enviaron instrucciones."
+        }
+
+    # Generar token y enviar correo
+    db = SessionLocal()
+    try:
+        token_plano = PasswordResetToken.generar(email, db)
+
+        base_url = public_urls_config.public_base_url.rstrip("/")
+        reset_url = f"{base_url}/static/reset-password.html?token={token_plano}"
+
+        enviado = enviar_reset_password(email, reset_url)
+        if not enviado:
+            logger.error("PASSWORD_RESET_REQUEST | email_fallo_envio")
+    except Exception as e:
+        logger.exception("PASSWORD_RESET_REQUEST | error=%s", e)
+    finally:
+        db.close()
+
+    return {
+        "ok": True,
+        "message": "Si el correo existe, se enviaron instrucciones."
+    }
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@limiter.limit("5/15minutes")
+async def reset_password(request: Request, payload: ResetPasswordRequest):
+    """Restablece la contraseña del SuperAdmin usando un token de reset.
+
+    Invalida todas las sesiones activas tras el cambio.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.warning("PASSWORD_RESET_EXECUTE | token_prefix=%s", payload.token[:8] + "...")
+
+    db = SessionLocal()
+    try:
+        # 1. Validar token
+        email = PasswordResetToken.validar(payload.token, db)
+        if not email:
+            logger.warning("PASSWORD_RESET_EXECUTE | token_invalido")
+            await asyncio.sleep(random.uniform(0.2, 0.4))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token invalido o expirado"
+            )
+
+        logger.warning("PASSWORD_RESET_EXECUTE | token_valido | email=%s", email[:3] + "***")
+
+        # 2. Hashear nueva contraseña
+        new_hash = ph.hash(payload.new_password)
+
+        # 3. Guardar en BD
+        SuperAdminCredentials.guardar_o_actualizar(email, new_hash, db)
+        logger.warning("PASSWORD_RESET_EXECUTE | password_hash_actualizado")
+
+        # 4. Invalidar TODOS los tokens de reset restantes
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.used == False  # noqa: E712
+        ).update({"used": True})
+        db.commit()
+        logger.warning("PASSWORD_RESET_EXECUTE | todos_tokens_invalidados")
+
+        # 5. Invalidar TODAS las sesiones admin activas
+        try:
+            from app.core.session_store import AdminSession
+            from datetime import datetime as dt, timezone as tz
+            db.query(AdminSession).filter(
+                AdminSession.revoked_at.is_(None)
+            ).update({"revoked_at": dt.now(tz.utc)})
+            db.commit()
+            logger.warning("PASSWORD_RESET_EXECUTE | todas_sesiones_invalidadas")
+        except Exception as e:
+            logger.error("PASSWORD_RESET_EXECUTE | error_invalidando_sesiones: %s", e)
+
+        return {
+            "ok": True,
+            "message": "Contraseña actualizada correctamente. Todas las sesiones han sido cerradas."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("PASSWORD_RESET_EXECUTE | error=%s", e)
+        if db:
+            db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al restablecer contraseña"
+        )
+    finally:
+        db.close()

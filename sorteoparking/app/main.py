@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 # Importa modelos para que SQLAlchemy registre todas las tablas.
-from app.models import catalogo, log, sorteo, superadmin, tenant  # noqa: F401
+from app.models import catalogo, log, password_reset, sorteo, superadmin, tenant  # noqa: F401
 
 import asyncio
 import logging

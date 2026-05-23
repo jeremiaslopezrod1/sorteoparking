@@ -20,6 +20,8 @@ services:
         value: Michael
       - key: SUPER_ADMIN_PASSWORD_HASH
         sync: false
+      - key: SUPER_ADMIN_EMAIL
+        value: pruebaalisocajica@gmail.com
       - key: SUPER_ADMIN_TOKEN
         sync: false
       - key: OTP_PEPPER
