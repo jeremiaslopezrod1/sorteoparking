@@ -32,11 +32,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 @app.middleware("http")
 async def tenant_auth_middleware(request: Request, call_next):
     try:
-        # Excluir rutas de autenticación y administración global del middleware de tenant
         if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/debug/"):
             request.state.tenant_id = None
             response = await call_next(request)
-            # Inyectar header de diagnostico en respuestas de error de admin
             if response.status_code >= 400:
                 response.headers["X-Auth-Path"] = "admin_router"
                 response.headers["X-Auth-Status"] = str(response.status_code)
@@ -44,11 +42,10 @@ async def tenant_auth_middleware(request: Request, call_next):
             
         auth_ctx = get_auth_context(request)
         request.state.tenant_id = auth_ctx.tenant_id
-    except Exception as exc:  # HTTPException incluida
+    except Exception as exc:
         status_code = getattr(exc, "status_code", 401)
         detail = getattr(exc, "detail", "No autorizado")
         exc_type = type(exc).__name__
-        # Loggear para diagnostico en servidor
         logger.warning(
             "AUTH_MIDDLEWARE_ERROR | path=%s | exc_type=%s | status=%s | detail=%s",
             request.url.path, exc_type, status_code, str(detail)[:100]
@@ -79,60 +76,36 @@ def _backfill_tenant_slugs() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    # CRÍTICO: Render redeploya y deja pools viejos.
-    # SQLAlchemy puede reutilizar conexiones SSL muertas.
-    logger.warning("DB startup: disposing stale pool...")
+    # ── FASE 0: Dispose de pool viejo ──────────────────────────────────
+    logger.warning("DB CONNECT START — disposing stale pool...")
     engine.dispose()
-    logger.warning("DB startup: pool disposed")
+    logger.warning("DB CONNECT START — pool disposed")
 
-    # FASE 1: Creacion de tablas (Base + admin_sessions)
-    tables_ok = True
+    # ── FASE 1: Creación de tablas principales — FAIL-FAST ─────────────
     try:
         Base.metadata.create_all(bind=engine)
-        logger.warning("STARTUP: Base.metadata.create_all OK")
-    except Exception as e:
-        logger.warning(
-            "STARTUP: Error creando tablas Base: %s - "
-            "continuando sin tablas principales", e
-        )
-        tables_ok = False
-    
-    # FASE 2: Inicializar SessionStore con SQLite propio en /tmp/
-    # (independiente de la BD principal — no requiere PostgreSQL)
-    try:
-        admin_session_table_ok = init_session_table()
-        logger.warning(
-            "STARTUP: init_session_table result=%s (tables_ok=%s)",
-            admin_session_table_ok, tables_ok
-        )
-        if not admin_session_table_ok:
-            logger.error("STARTUP: admin_sessions NO disponible — sesiones fallaran")
-    except Exception as e:
-        logger.error("STARTUP: init_session_table exception: %s", e)
-        admin_session_table_ok = False
-    
-    if not tables_ok:
-        logger.warning(
-            "STARTUP: tablas principales NO disponibles - "
-            "funcionalidad de negocio limitada. Health check respondera."
-        )
-    
+        logger.warning("DB CONNECT OK — Base.metadata.create_all OK")
+    except Exception:
+        logger.exception("CRITICAL: DB unavailable — Base.metadata.create_all FAILED")
+        raise RuntimeError("Database startup failed: PostgreSQL unreachable") from None
+
+    # ── FASE 2: admin_sessions (mismo engine) ─────────────────────────
+    admin_sessions_ok = init_session_table(engine)
+    if not admin_sessions_ok:
+        logger.error("CRITICAL: admin_sessions table creation FAILED")
+        raise RuntimeError("Database startup failed: admin_sessions unavailable")
+
+    # ── FASE 3: SessionStore ──────────────────────────────────────────
     try:
         session_store.configure()
-        logger.warning("STARTUP: session_store.configure OK")
-        
-        # Verificar que SessionStore funcione creando una sesion de prueba
-        try:
-            test_db = session_store._get_db()
-            test_db.close()
-            logger.warning("STARTUP: session_store._get_db() OK")
-        except Exception as test_e:
-            logger.error("STARTUP: session_store._get_db() test FAILED: %s", test_e)
-    except Exception as e:
-        logger.error("STARTUP: Error configurando SessionStore: %s", e)
-    
+        logger.warning("CONFIGURE OK — SessionStore inicializado")
+    except Exception:
+        logger.exception("CRITICAL: SessionStore configure FAILED")
+        raise RuntimeError("Database startup failed: SessionStore unavailable") from None
+
+    # ── FASE 4: Post-inicialización (SQLite WAL, slugs, backups) ──────
     is_sqlite = "sqlite" in str(engine.url)
-    
+
     if is_sqlite:
         try:
             configurar_sqlite_wal()
@@ -158,7 +131,7 @@ async def startup() -> None:
         except Exception:
             pass
     else:
-        logger.info("PostgreSQL detectado")
+        logger.info("PostgreSQL detectado — pool unificado, startup completo")
         try:
             _backfill_tenant_slugs()
         except Exception:

@@ -1,70 +1,24 @@
 """Almacenamiento de sesiones (SDD §13.11).
 
-En Render (DATABASE_URL=postgresql://...): usa la misma conexión PostgreSQL
-para admin_sessions — NO intenta abrir /data/admin_sessions.db.
+Usa EXACTAMENTE el mismo engine y pool que la app principal.
+NO crea engine propio. NO SQLite paralelo. NO fallback.
 
-En local (DATABASE_URL=sqlite:///...): usa SQLite local.
-
-El directorio /data NO existe en Render sin un Disk configurado.
+Si PostgreSQL no está disponible → la app NO arranca (fail-fast en main.py).
 """
 
 import hashlib
 import hmac
 import logging
-import os
 import threading
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Text, create_engine, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, DateTime, Text, text
+from sqlalchemy.orm import declarative_base
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sorteoparking.db")
-_ES_POSTGRESQL = DATABASE_URL.startswith("postgresql") or DATABASE_URL.startswith("postgres://")
-
-if _ES_POSTGRESQL:
-    # Normalizar postgres:// → postgresql://
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-    _SESSION_DB_URL = DATABASE_URL
-    _SESSION_CONNECT_ARGS = {"sslmode": "require"}
-    _SESSION_ENGINE_KWARGS = {
-        "pool_pre_ping": True,
-        "pool_size": 5,
-        "max_overflow": 2,
-        "pool_recycle": 300,
-    }
-    logger.warning("SESSION_STORE: usando PostgreSQL para admin_sessions")
-else:
-    _SESSION_DB_PATH = os.environ.get("SESSION_DB_PATH", "/tmp/admin_sessions.db")
-    _SESSION_DB_URL = f"sqlite:///{_SESSION_DB_PATH}"
-    _SESSION_CONNECT_ARGS = {"timeout": 30, "check_same_thread": False}
-    _SESSION_ENGINE_KWARGS = {
-        "pool_pre_ping": True,
-        "pool_size": 1,
-        "max_overflow": 0,
-    }
-    logger.warning("SESSION_STORE: usando SQLite en %s para admin_sessions", _SESSION_DB_PATH)
-
 _SessionBase = declarative_base()
-_SessionEngine = None
-_SessionLocal = None
-
-
-def _get_session_engine():
-    """Engine dedicado para admin_sessions (lazy init)."""
-    global _SessionEngine, _SessionLocal
-    if _SessionEngine is None:
-        _SessionEngine = create_engine(
-            _SESSION_DB_URL,
-            connect_args=_SESSION_CONNECT_ARGS,
-            **_SESSION_ENGINE_KWARGS,
-        )
-        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_SessionEngine)
-    return _SessionEngine
 
 
 class AdminSession(_SessionBase):
@@ -84,7 +38,9 @@ def _verify_admin_sessions_table(engine) -> bool:
     """Verifica que la tabla admin_sessions exista y sea accesible."""
     try:
         with engine.connect() as conn:
-            if _ES_POSTGRESQL:
+            # Detectar tipo de BD
+            is_postgresql = "postgresql" in str(engine.url)
+            if is_postgresql:
                 result = conn.execute(
                     text(
                         "SELECT EXISTS (SELECT FROM information_schema.tables "
@@ -108,28 +64,20 @@ def _verify_admin_sessions_table(engine) -> bool:
         return False
 
 
-def init_session_table(engine=None) -> bool:
-    """Crea la tabla admin_sessions.
+def init_session_table(engine) -> bool:
+    """Crea la tabla admin_sessions usando el engine principal.
 
     Args:
-        engine: ignorado (mantenido por compatibilidad con main.py).
-                Siempre usa su propio engine (PostgreSQL o SQLite).
+        engine: engine SQLAlchemy de app.db.database (único, compartido).
+
     Returns:
         True si la tabla existe/fue creada, False en caso de error.
     """
     try:
-        session_engine = _get_session_engine()
-        _SessionBase.metadata.create_all(bind=session_engine)
-        logger.warning("INIT_TABLE: _SessionBase.metadata.create_all OK")
+        _SessionBase.metadata.create_all(bind=engine)
+        logger.warning("INIT_TABLE: admin_sessions create_all OK")
 
-        if not _ES_POSTGRESQL:
-            # SQLite: configurar WAL
-            with session_engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL"))
-                conn.execute(text("PRAGMA synchronous=NORMAL"))
-                conn.execute(text("PRAGMA foreign_keys=ON"))
-
-        exists = _verify_admin_sessions_table(session_engine)
+        exists = _verify_admin_sessions_table(engine)
         if exists:
             logger.warning("INIT_TABLE: admin_sessions CONFIRMADA")
         else:
@@ -143,7 +91,7 @@ def init_session_table(engine=None) -> bool:
 class SessionStore:
     """Almacenamiento de sesiones.
 
-    Singleton. Usa PostgreSQL en Render o SQLite en local.
+    Singleton. Usa el SessionLocal de app.db.database (mismo engine, mismo pool).
     """
 
     _instance = None
@@ -156,13 +104,9 @@ class SessionStore:
                     cls._instance = super(SessionStore, cls).__new__(cls)
         return cls._instance
 
-    def configure(self, engine=None) -> None:
-        """Inicializa el SessionStore.
-
-        Args:
-            engine: ignorado (compatibilidad con main.py).
-        """
-        logger.warning("CONFIGURE: SessionStore inicializando")
+    def configure(self) -> None:
+        """Inicializa el SessionStore usando el SessionLocal principal."""
+        logger.warning("CONFIGURE: SessionStore inicializando con engine compartido")
         try:
             self._limpiar_expiradas()
         except Exception as e:
@@ -170,11 +114,11 @@ class SessionStore:
         self.schedule_cleanup()
 
     def _get_db(self):
-        """Crea una nueva sesion SQLAlchemy."""
-        global _SessionLocal
-        _get_session_engine()  # asegura que _SessionLocal esté inicializado
+        """Crea una nueva sesion usando el SessionLocal principal."""
+        from app.db.database import SessionLocal  # import local para evitar circular
+
         try:
-            return _SessionLocal()
+            return SessionLocal()
         except Exception as e:
             logger.error("SessionStore._get_db() error creando sesion: %s", e)
             raise
@@ -190,21 +134,20 @@ class SessionStore:
             csrf_token = token_hash[:32]
 
         logger.warning(
-            "AUTH CREATE session_id=%s | token_hash=%s... | len(session_id)=%d",
-            session_id[:8], token_hash[:16], len(session_id)
+            "AUTH SESSION CREATE session_id=%s | token_hash=%s...",
+            session_id[:8], token_hash[:16]
         )
 
         db = None
         try:
             db = self._get_db()
-            logger.warning("AUTH CREATE got_db_session")
 
             # Revocar sesiones previas del mismo token
             rev = db.query(AdminSession).filter(
                 AdminSession.token_hash == token_hash,
                 AdminSession.revoked_at.is_(None),
             ).update({"revoked_at": datetime.now(timezone.utc)})
-            logger.warning("AUTH CREATE revoked_prev=%d", rev)
+            logger.warning("AUTH SESSION CREATE revoked_prev=%d", rev)
 
             ses = AdminSession(
                 session_id=session_id,
@@ -213,80 +156,60 @@ class SessionStore:
                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=60),
             )
             db.add(ses)
-            logger.warning("AUTH CREATE added_to_session | repr(session_id)=%r", session_id)
-
             db.commit()
-            logger.warning("AUTH CREATE commit_ok")
+            logger.warning("AUTH SESSION CREATED session_id=%s", session_id[:8])
 
-            # VALIDACION DIRECTA: verificar que el registro se persistio
+            # VALIDACION DIRECTA
+            verify_db = None
             try:
-                global _SessionLocal
-                verify_db = _SessionLocal()
-                if _ES_POSTGRESQL:
-                    raw = verify_db.execute(
-                        text("SELECT session_id, expires_at, created_at "
-                             "FROM admin_sessions WHERE session_id=:id"),
-                        {"id": session_id}
-                    )
-                else:
-                    raw = verify_db.execute(
-                        text("SELECT session_id, expires_at, created_at "
-                             "FROM admin_sessions WHERE session_id=:id"),
-                        {"id": session_id}
-                    )
+                from app.db.database import SessionLocal
+                verify_db = SessionLocal()
+                raw = verify_db.execute(
+                    text("SELECT session_id, expires_at, created_at "
+                         "FROM admin_sessions WHERE session_id=:id"),
+                    {"id": session_id}
+                )
                 row = raw.first()
                 found = row is not None
                 if found:
                     logger.warning(
-                        "AUTH CREATE persisted=True | session_id=%r | "
-                        "expires_at=%s | created_at=%s",
-                        session_id,
-                        row[1] if row[1] else "?",
-                        row[2] if row[2] else "?",
+                        "AUTH SESSION CREATED persisted=True | session_id=%s",
+                        session_id[:8]
                     )
                 else:
                     logger.error(
-                        "AUTH CREATE persisted=False | session_id=%r | "
-                        "NO ENCONTRADO",
-                        session_id
+                        "AUTH SESSION CREATED persisted=False | session_id=%s",
+                        session_id[:8]
                     )
                     return False
-                verify_db.close()
             except Exception as inner_e:
-                logger.error("AUTH CREATE post-commit verification error: %s", inner_e)
+                logger.error("AUTH SESSION CREATED verify error: %s", inner_e)
+            finally:
+                if verify_db:
+                    verify_db.close()
 
-            logger.warning("AUTH CREATE session CREATED OK session_id=%s", session_id[:8])
             return True
 
         except Exception as e:
-            logger.error(
-                "AUTH CREATE ERROR session_id=%s | error=%s | db_initialized=%s",
-                session_id[:8], e, db is not None
-            )
+            logger.error("AUTH SESSION CREATE ERROR session_id=%s | error=%s", session_id[:8], e)
             if db:
                 try:
                     db.rollback()
                 except Exception as rb_e:
-                    logger.error("AUTH CREATE rollback_error=%s", rb_e)
+                    logger.error("AUTH SESSION CREATE rollback_error=%s", rb_e)
             return False
         finally:
             if db:
                 try:
                     db.close()
                 except Exception as close_e:
-                    logger.error("AUTH CREATE close_error=%s", close_e)
+                    logger.error("AUTH SESSION CREATE close_error=%s", close_e)
 
     def get_session(self, session_id: str) -> Optional[str]:
         """Recupera el token_hash asociado a una sesion."""
         db = None
         try:
             db = self._get_db()
-            self._log_session_count(db, "prev")
-
-            logger.warning(
-                "AUTH GET entrada | session_id=%r | len=%d",
-                session_id, len(session_id) if session_id else 0
-            )
 
             ses = db.query(AdminSession).filter(
                 AdminSession.session_id == session_id,
@@ -295,47 +218,31 @@ class SessionStore:
             ).first()
             found = ses is not None
 
-            logger.warning(
-                "AUTH GET session_id=%s | found=%s | hash=%s...",
-                session_id[:8],
-                found,
-                ses.token_hash[:16] if found else "N/A"
-            )
-
-            if not found:
+            if found:
+                logger.warning("AUTH SESSION FOUND session_id=%s", session_id[:8])
+                return ses.token_hash
+            else:
+                # Diagnóstico: ¿por qué no se encontró?
                 total = db.query(AdminSession).count()
-                expired = db.query(AdminSession).filter(
-                    AdminSession.expires_at <= datetime.now(timezone.utc)
-                ).count()
-                revoked = db.query(AdminSession).filter(
-                    AdminSession.revoked_at.isnot(None)
-                ).count()
                 any_row = db.query(AdminSession).filter(
                     AdminSession.session_id == session_id
                 ).first()
                 if any_row:
                     logger.warning(
-                        "AUTH GET session_id=%s | EXISTS sin filtros | "
-                        "expired=%s | revoked=%s",
+                        "AUTH SESSION NOT FOUND session_id=%s | expired=%s | revoked=%s | total=%d",
                         session_id[:8],
                         any_row.expires_at <= datetime.now(timezone.utc),
                         any_row.revoked_at is not None,
+                        total,
                     )
                 else:
                     logger.warning(
-                        "AUTH GET session_id=%s | NO existe (0 filas) | "
-                        "total_sesiones=%d | expired=%d | revoked=%d",
-                        session_id[:8], total, expired, revoked,
+                        "AUTH SESSION NOT FOUND session_id=%s | no_rows | total=%d",
+                        session_id[:8], total,
                     )
-
-            if ses:
-                return ses.token_hash
-            return None
+                return None
         except Exception as e:
-            logger.error(
-                "AUTH GET ERROR session_id=%s | error=%s",
-                session_id[:8] if session_id else "?", e
-            )
+            logger.error("AUTH SESSION GET ERROR session_id=%s | error=%s", session_id[:8] if session_id else "?", e)
             return None
         finally:
             if db:
@@ -343,20 +250,6 @@ class SessionStore:
                     db.close()
                 except Exception:
                     pass
-
-    def _log_session_count(self, db, context: str) -> None:
-        try:
-            total = db.query(AdminSession).count()
-            active = db.query(AdminSession).filter(
-                AdminSession.revoked_at.is_(None),
-                AdminSession.expires_at > datetime.now(timezone.utc),
-            ).count()
-            logger.warning(
-                "AUTH SESSION_COUNT [%s] total=%d active=%d",
-                context, total, active
-            )
-        except Exception as e:
-            logger.debug("AUTH SESSION_COUNT [%s] error=%s", context, e)
 
     def validate_csrf(self, session_id: str, csrf_header: str) -> bool:
         if not csrf_header:
@@ -372,19 +265,11 @@ class SessionStore:
             ).first()
             if ses:
                 match = hmac.compare_digest(ses.csrf_token, csrf_header)
-                logger.warning(
-                    "AUTH CSRF session=%s | match=%s",
-                    session_id[:8], match
-                )
                 return match
-            logger.warning(
-                "AUTH CSRF session=%s | sesion_no_encontrada",
-                session_id[:8]
-            )
+            logger.warning("AUTH CSRF session=%s | sesion_no_encontrada", session_id[:8])
             return False
         except Exception as e:
-            logger.error("AUTH CSRF ERROR session=%s | error=%s",
-                         session_id[:8] if session_id else "?", e)
+            logger.error("AUTH CSRF ERROR session=%s | error=%s", session_id[:8] if session_id else "?", e)
             return False
         finally:
             if db:
@@ -401,10 +286,7 @@ class SessionStore:
                 AdminSession.session_id == session_id
             ).update({"revoked_at": datetime.now(timezone.utc)})
             db.commit()
-            logger.warning(
-                "AUTH DELETE session=%s | revoked=%d",
-                session_id[:8], result
-            )
+            logger.warning("AUTH SESSION DELETED session=%s | revoked=%d", session_id[:8], result)
             return result > 0
         except Exception as e:
             if db:
@@ -412,8 +294,7 @@ class SessionStore:
                     db.rollback()
                 except Exception:
                     pass
-            logger.error("AUTH DELETE ERROR session=%s | error=%s",
-                         session_id[:8] if session_id else "?", e)
+            logger.error("AUTH SESSION DELETE ERROR session=%s | error=%s", session_id[:8] if session_id else "?", e)
             return False
         finally:
             if db:
@@ -432,14 +313,14 @@ class SessionStore:
             ).delete()
             db.commit()
             if deleted:
-                logger.info("Limpieza: %d sesiones eliminadas", deleted)
+                logger.info("SESSION CLEAN: %d sesiones eliminadas", deleted)
         except Exception as e:
             if db:
                 try:
                     db.rollback()
                 except Exception:
                     pass
-            logger.error("Error limpiando sesiones: %s", e)
+            logger.error("SESSION CLEAN ERROR: %s", e)
         finally:
             if db:
                 try:

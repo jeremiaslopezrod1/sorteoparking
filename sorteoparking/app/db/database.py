@@ -1,6 +1,8 @@
 """
 Database engine — PostgreSQL en Render, SQLite local.
 SSL obligatorio (sslmode=require), pool_pre_ping, pool_recycle=300.
+
+ÚNICO engine. ÚNICO SessionLocal. Sin duplicados.
 """
 
 import logging
@@ -17,6 +19,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sorteoparking.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+logger.warning("DB CONNECT START | scheme=%s", DATABASE_URL.split("://")[0] if "://" in DATABASE_URL else "unknown")
+
 if DATABASE_URL.startswith("postgresql"):
     engine = create_engine(
         DATABASE_URL,
@@ -26,10 +30,10 @@ if DATABASE_URL.startswith("postgresql"):
         max_overflow=2,
         pool_recycle=300,
     )
+    logger.warning("DB CONNECT OK | engine=postgresql | pool_size=5 | sslmode=require")
 
 else:
-    # SQLite solo local
-    logger.warning("DB CONNECT: SQLite detectado")
+    logger.warning("DB CONNECT OK | engine=sqlite | local_only")
 
     engine = create_engine(
         DATABASE_URL,

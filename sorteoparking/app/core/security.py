@@ -111,11 +111,6 @@ def get_super_admin_from_cookie(request: Request) -> str:
     if session_id:
         token = session_store.get_session(session_id)
         logger.debug("token en store: %s", bool(token))
-        # Mostrar número de sesiones activas (para debugging temporal)
-        try:
-            logger.debug("sesiones activas: %d", len(session_store._sessions))
-        except Exception:
-            logger.debug("sesiones activas: (no disponible)")
 
     if not session_id:
         raise HTTPException(
