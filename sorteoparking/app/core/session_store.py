@@ -1,13 +1,3 @@
-"""Almacenamiento de sesiones (SDD §13.11).
-
-Usa SQLite propio en /data/ para sesiones de admin.
-Independiente de la BD principal (PostgreSQL).
-Ruta /data/ es writable y persistente en Render.
-
-NO depende de database.py SessionLocal — evita problemas de SSL
-con PostgreSQL en Render cuando la BD principal es inaccesible.
-"""
-
 import hashlib
 import hmac
 import logging
@@ -205,6 +195,7 @@ class SessionStore:
             logger.warning("AUTH CREATE commit_ok")
 
             # VALIDACION DIRECTA: verificar que el registro se persistio
+            verify_db = None
             try:
                 global _SessionLocal
                 verify_db = _SessionLocal()
@@ -225,19 +216,23 @@ class SessionStore:
                         datetime.now(timezone.utc).isoformat(),
                         (row[1] - datetime.now(timezone.utc)).total_seconds() if row[1] else 0
                     )
+                    return True
                 else:
                     logger.error(
                         "AUTH CREATE persisted=False | session_id=%r | "
-                        "NO ENCONTRADO en SQLite sesiones",
+                        "NO ENCONTRADO en SQLite sesiones — commit falló silenciosamente",
                         session_id
                     )
                     return False
-                verify_db.close()
             except Exception as inner_e:
                 logger.error("AUTH CREATE post-commit verification error: %s", inner_e)
-
-            logger.warning("AUTH CREATE session CREATED OK session_id=%s", session_id[:8])
-            return True
+                return False
+            finally:
+                if verify_db:
+                    try:
+                        verify_db.close()
+                    except Exception as close_e:
+                        logger.error("AUTH CREATE verify_db close error: %s", close_e)
 
         except Exception as e:
             logger.error(
