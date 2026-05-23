@@ -24,13 +24,25 @@ logger.warning("DB CONNECT START | scheme=%s", DATABASE_URL.split("://")[0] if "
 if DATABASE_URL.startswith("postgresql"):
     engine = create_engine(
         DATABASE_URL,
-        connect_args={"sslmode": "require"},
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 10,
+        },
         pool_pre_ping=True,
-        pool_size=5,
+        pool_size=3,
         max_overflow=2,
         pool_recycle=300,
+        pool_timeout=10,
     )
-    logger.warning("DB CONNECT OK | engine=postgresql | pool_size=5 | sslmode=require")
+
+    # TEST INMEDIATO DE CONEXIÓN — si falla, el módulo no carga
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.warning("DB CONNECT OK | engine=postgresql | pool_size=3 | sslmode=require | SELECT 1 OK")
+    except Exception:
+        logger.exception("DB CONNECT FAILED — PostgreSQL unreachable")
+        raise RuntimeError("Database startup failed: PostgreSQL unreachable") from None
 
 else:
     logger.warning("DB CONNECT OK | engine=sqlite | local_only")
