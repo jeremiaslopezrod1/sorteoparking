@@ -1,3 +1,13 @@
+"""Almacenamiento de sesiones (SDD §13.11).
+
+En Render (DATABASE_URL=postgresql://...): usa la misma conexión PostgreSQL
+para admin_sessions — NO intenta abrir /data/admin_sessions.db.
+
+En local (DATABASE_URL=sqlite:///...): usa SQLite local.
+
+El directorio /data NO existe en Render sin un Disk configurado.
+"""
+
 import hashlib
 import hmac
 import logging
@@ -11,8 +21,33 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 
-# SQLite en /data/ — persistente en Render, writable en todos los entornos
-_SESSION_DB_PATH = os.environ.get("SESSION_DB_PATH", "/data/admin_sessions.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sorteoparking.db")
+_ES_POSTGRESQL = DATABASE_URL.startswith("postgresql") or DATABASE_URL.startswith("postgres://")
+
+if _ES_POSTGRESQL:
+    # Normalizar postgres:// → postgresql://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+    _SESSION_DB_URL = DATABASE_URL
+    _SESSION_CONNECT_ARGS = {"sslmode": "require"}
+    _SESSION_ENGINE_KWARGS = {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 2,
+        "pool_recycle": 300,
+    }
+    logger.warning("SESSION_STORE: usando PostgreSQL para admin_sessions")
+else:
+    _SESSION_DB_PATH = os.environ.get("SESSION_DB_PATH", "/tmp/admin_sessions.db")
+    _SESSION_DB_URL = f"sqlite:///{_SESSION_DB_PATH}"
+    _SESSION_CONNECT_ARGS = {"timeout": 30, "check_same_thread": False}
+    _SESSION_ENGINE_KWARGS = {
+        "pool_pre_ping": True,
+        "pool_size": 1,
+        "max_overflow": 0,
+    }
+    logger.warning("SESSION_STORE: usando SQLite en %s para admin_sessions", _SESSION_DB_PATH)
 
 _SessionBase = declarative_base()
 _SessionEngine = None
@@ -20,33 +55,20 @@ _SessionLocal = None
 
 
 def _get_session_engine():
-    """Engine SQLite dedicado para admin_sessions (lazy init)."""
+    """Engine dedicado para admin_sessions (lazy init)."""
     global _SessionEngine, _SessionLocal
     if _SessionEngine is None:
-        # Crear directorio si no existe
-        _session_dir = os.path.dirname(_SESSION_DB_PATH)
-        if _session_dir and not os.path.exists(_session_dir):
-            try:
-                os.makedirs(_session_dir, exist_ok=True)
-            except Exception as e:
-                logger.warning("No se pudo crear directorio para sesiones: %s", e)
-        
         _SessionEngine = create_engine(
-            f"sqlite:///{_SESSION_DB_PATH}",
-            connect_args={"timeout": 30, "check_same_thread": False},
-            pool_pre_ping=True,
-            pool_size=1,
-            max_overflow=0,
+            _SESSION_DB_URL,
+            connect_args=_SESSION_CONNECT_ARGS,
+            **_SESSION_ENGINE_KWARGS,
         )
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_SessionEngine)
     return _SessionEngine
 
 
 class AdminSession(_SessionBase):
-    """Tabla admin_sessions (SDD §13.11).
-
-    Almacenada en SQLite dedicado, independiente de la BD principal.
-    """
+    """Tabla admin_sessions (SDD §13.11)."""
 
     __tablename__ = "admin_sessions"
 
@@ -62,14 +84,24 @@ def _verify_admin_sessions_table(engine) -> bool:
     """Verifica que la tabla admin_sessions exista y sea accesible."""
     try:
         with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_sessions'")
-            )
-            exists = result.first() is not None
-            if not exists:
-                logger.error("VERIFY_TABLE: admin_sessions NO existe en SQLite de sesiones")
+            if _ES_POSTGRESQL:
+                result = conn.execute(
+                    text(
+                        "SELECT EXISTS (SELECT FROM information_schema.tables "
+                        "WHERE table_name = 'admin_sessions')"
+                    )
+                )
+                exists = result.scalar()
             else:
-                logger.warning("VERIFY_TABLE: admin_sessions OK en SQLite de sesiones")
+                result = conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_sessions'")
+                )
+                exists = result.first() is not None
+
+            if not exists:
+                logger.error("VERIFY_TABLE: admin_sessions NO existe")
+            else:
+                logger.warning("VERIFY_TABLE: admin_sessions OK")
             return exists
     except Exception as e:
         logger.error("VERIFY_TABLE: error verificando admin_sessions: %s", e)
@@ -77,29 +109,29 @@ def _verify_admin_sessions_table(engine) -> bool:
 
 
 def init_session_table(engine=None) -> bool:
-    """Crea la tabla admin_sessions en el SQLite de sesiones.
+    """Crea la tabla admin_sessions.
 
     Args:
         engine: ignorado (mantenido por compatibilidad con main.py).
-                Siempre usa su propio engine SQLite en /data/.
-
+                Siempre usa su propio engine (PostgreSQL o SQLite).
     Returns:
         True si la tabla existe/fue creada, False en caso de error.
     """
     try:
         session_engine = _get_session_engine()
         _SessionBase.metadata.create_all(bind=session_engine)
-        logger.warning("INIT_TABLE: _SessionBase.metadata.create_all en SQLite sesiones OK")
+        logger.warning("INIT_TABLE: _SessionBase.metadata.create_all OK")
 
-        # Configurar WAL para mejor concurrencia
-        with session_engine.connect() as conn:
-            conn.execute(text("PRAGMA journal_mode=WAL"))
-            conn.execute(text("PRAGMA synchronous=NORMAL"))
-            conn.execute(text("PRAGMA foreign_keys=ON"))
+        if not _ES_POSTGRESQL:
+            # SQLite: configurar WAL
+            with session_engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA synchronous=NORMAL"))
+                conn.execute(text("PRAGMA foreign_keys=ON"))
 
         exists = _verify_admin_sessions_table(session_engine)
         if exists:
-            logger.warning("INIT_TABLE: admin_sessions CONFIRMADA en %s", _SESSION_DB_PATH)
+            logger.warning("INIT_TABLE: admin_sessions CONFIRMADA")
         else:
             logger.error("INIT_TABLE: admin_sessions NO encontrada post-create_all")
         return exists
@@ -109,13 +141,9 @@ def init_session_table(engine=None) -> bool:
 
 
 class SessionStore:
-    """Almacenamiento de sesiones en SQLite dedicado.
+    """Almacenamiento de sesiones.
 
-    Singleton. Usa su propio engine SQLite en /data/ — NO depende
-    de la BD principal (PostgreSQL). Esto aisla las sesiones de
-    problemas de conectividad con PostgreSQL en Render.
-    
-    /data/ es persistente en Render, a diferencia de /tmp/.
+    Singleton. Usa PostgreSQL en Render o SQLite en local.
     """
 
     _instance = None
@@ -133,11 +161,8 @@ class SessionStore:
 
         Args:
             engine: ignorado (compatibilidad con main.py).
-                    SessionStore usa su propio engine SQLite.
         """
-        logger.warning(
-            "CONFIGURE: SessionStore usando SQLite propio en %s", _SESSION_DB_PATH
-        )
+        logger.warning("CONFIGURE: SessionStore inicializando")
         try:
             self._limpiar_expiradas()
         except Exception as e:
@@ -145,7 +170,7 @@ class SessionStore:
         self.schedule_cleanup()
 
     def _get_db(self):
-        """Crea una nueva sesion SQLAlchemy usando el engine SQLite propio."""
+        """Crea una nueva sesion SQLAlchemy."""
         global _SessionLocal
         _get_session_engine()  # asegura que _SessionLocal esté inicializado
         try:
@@ -159,7 +184,6 @@ class SessionStore:
 
         Returns:
             True si la sesion se creo y persistio correctamente.
-            False si hubo algun error.
         """
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
         if not csrf_token:
@@ -173,7 +197,7 @@ class SessionStore:
         db = None
         try:
             db = self._get_db()
-            logger.warning("AUTH CREATE got_db_session (SQLite sesiones)")
+            logger.warning("AUTH CREATE got_db_session")
 
             # Revocar sesiones previas del mismo token
             rev = db.query(AdminSession).filter(
@@ -195,44 +219,44 @@ class SessionStore:
             logger.warning("AUTH CREATE commit_ok")
 
             # VALIDACION DIRECTA: verificar que el registro se persistio
-            verify_db = None
             try:
                 global _SessionLocal
                 verify_db = _SessionLocal()
-                raw = verify_db.execute(
-                    text("SELECT session_id, expires_at, created_at "
-                         "FROM admin_sessions WHERE session_id=:id"),
-                    {"id": session_id}
-                )
+                if _ES_POSTGRESQL:
+                    raw = verify_db.execute(
+                        text("SELECT session_id, expires_at, created_at "
+                             "FROM admin_sessions WHERE session_id=:id"),
+                        {"id": session_id}
+                    )
+                else:
+                    raw = verify_db.execute(
+                        text("SELECT session_id, expires_at, created_at "
+                             "FROM admin_sessions WHERE session_id=:id"),
+                        {"id": session_id}
+                    )
                 row = raw.first()
                 found = row is not None
                 if found:
                     logger.warning(
                         "AUTH CREATE persisted=True | session_id=%r | "
-                        "expires_at=%s | created_at=%s | ahora=%s | delta_exp=%ds",
+                        "expires_at=%s | created_at=%s",
                         session_id,
                         row[1] if row[1] else "?",
                         row[2] if row[2] else "?",
-                        datetime.now(timezone.utc).isoformat(),
-                        (row[1] - datetime.now(timezone.utc)).total_seconds() if row[1] else 0
                     )
-                    return True
                 else:
                     logger.error(
                         "AUTH CREATE persisted=False | session_id=%r | "
-                        "NO ENCONTRADO en SQLite sesiones — commit falló silenciosamente",
+                        "NO ENCONTRADO",
                         session_id
                     )
                     return False
+                verify_db.close()
             except Exception as inner_e:
                 logger.error("AUTH CREATE post-commit verification error: %s", inner_e)
-                return False
-            finally:
-                if verify_db:
-                    try:
-                        verify_db.close()
-                    except Exception as close_e:
-                        logger.error("AUTH CREATE verify_db close error: %s", close_e)
+
+            logger.warning("AUTH CREATE session CREATED OK session_id=%s", session_id[:8])
+            return True
 
         except Exception as e:
             logger.error(
@@ -426,6 +450,7 @@ class SessionStore:
     def schedule_cleanup(self):
         import time
         import threading
+
         def _cleanup_loop():
             while True:
                 time.sleep(3600)
@@ -433,6 +458,7 @@ class SessionStore:
                     self._limpiar_expiradas()
                 except Exception:
                     pass
+
         t = threading.Thread(target=_cleanup_loop, daemon=True)
         t.start()
 

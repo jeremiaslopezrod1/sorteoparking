@@ -1,7 +1,6 @@
 """
 Database engine — PostgreSQL en Render, SQLite local.
-Hardened: pool_pre_ping, pool_recycle=180, sslmode=require,
-connect_timeout, echo_pool para diagnostico.
+SSL obligatorio (sslmode=require), pool_pre_ping, pool_recycle=300.
 """
 
 import logging
@@ -19,35 +18,14 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 if DATABASE_URL.startswith("postgresql"):
-    logger.warning("DB CONNECT: PostgreSQL detectado — configurando SSL")
-
     engine = create_engine(
         DATABASE_URL,
-
-        # CRÍTICO — evita conexiones zombie
+        connect_args={"sslmode": "require"},
         pool_pre_ping=True,
-
-        # Reciclar conexiones antes que Render cierre SSL idle
-        pool_recycle=180,
-
-        # Pool razonable para produccion
         pool_size=5,
         max_overflow=2,
-
-        # Evitar waits infinitos
-        pool_timeout=30,
-
-        # Logging temporal diagnostico
-        echo_pool=True,
-
-        connect_args={
-            "sslmode": "require",
-            "connect_timeout": 10,
-            "application_name": "sorteoparking",
-        },
+        pool_recycle=300,
     )
-
-    logger.warning("DB CONNECT: engine PostgreSQL creado OK")
 
 else:
     # SQLite solo local
