@@ -3,6 +3,9 @@ Database engine — PostgreSQL en Render, SQLite local.
 SSL obligatorio (sslmode=require), pool_pre_ping, pool_recycle=300.
 
 ÚNICO engine. ÚNICO SessionLocal. Sin duplicados.
+
+IMPORTANTE: NO hace conexiones a nivel de módulo.
+La validación de conectividad ocurre en main.py startup.
 """
 
 import logging
@@ -34,18 +37,10 @@ if DATABASE_URL.startswith("postgresql"):
         pool_recycle=300,
         pool_timeout=10,
     )
-
-    # TEST INMEDIATO DE CONEXIÓN — si falla, el módulo no carga
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.warning("DB CONNECT OK | engine=postgresql | pool_size=3 | sslmode=require | SELECT 1 OK")
-    except Exception:
-        logger.exception("DB CONNECT FAILED — PostgreSQL unreachable")
-        raise RuntimeError("Database startup failed: PostgreSQL unreachable") from None
+    logger.warning("DB ENGINE CREATED | engine=postgresql | pool_size=3 | sslmode=require")
 
 else:
-    logger.warning("DB CONNECT OK | engine=sqlite | local_only")
+    logger.warning("DB ENGINE CREATED | engine=sqlite | local_only")
 
     engine = create_engine(
         DATABASE_URL,
@@ -55,6 +50,25 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+def verificar_conexion_postgresql() -> bool:
+    """TEST de conexión directa — llamado desde startup en main.py.
+    
+    SÓLO para PostgreSQL. Retorna True si SELECT 1 funciona.
+    No se llama a nivel de módulo para evitar crashes en import-time.
+    """
+    if not DATABASE_URL.startswith("postgresql"):
+        return True  # SQLite no necesita test
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.warning("DB CONNECT OK — SELECT 1 exitoso")
+        return True
+    except Exception:
+        logger.exception("DB CONNECT FAILED — PostgreSQL unreachable")
+        return False
 
 
 def configurar_sqlite_wal():
@@ -70,4 +84,4 @@ def configurar_sqlite_wal():
         with engine.connect() as conn:
             result = conn.execute(text("PRAGMA journal_mode")).scalar()
     except Exception:
-        pass  # No crítico si falla
+        pass

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.security import get_auth_context
-from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal
+from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal, verificar_conexion_postgresql
 from app.routers import admin, auth, catalogo as catalogo_router, debug, publico, sorteos
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -80,6 +80,11 @@ async def startup() -> None:
     logger.warning("DB CONNECT START — disposing stale pool...")
     engine.dispose()
     logger.warning("DB CONNECT START — pool disposed")
+
+    # ── FASE 0.5: Verificar conectividad PostgreSQL ────────────────────
+    if not verificar_conexion_postgresql():
+        logger.critical("CRITICAL: PostgreSQL unreachable — abortando startup")
+        raise RuntimeError("Database startup failed: PostgreSQL unreachable")
 
     # ── FASE 1: Creación de tablas principales — FAIL-FAST ─────────────
     try:
