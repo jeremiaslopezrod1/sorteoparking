@@ -31,13 +31,18 @@ def hacer_backup() -> Path:
     """
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     
+    # Obtener ruta de la BD (CORREGIDO: usar _get_db_path())
+    db_path = _get_db_path()
+    if not db_path:
+        raise RuntimeError("No se pudo obtener la ruta de la base de datos SQLite")
+    
     timestamp = datetime.now(timezone.utc)\
         .strftime("%Y%m%d_%H%M%S")
     backup_path = BACKUP_DIR / \
         f"sorteoparking_{timestamp}.db"
     
     # SQLite backup API — consistente con WAL
-    src = sqlite3.connect(str(DB_PATH))
+    src = sqlite3.connect(str(db_path))
     dst = sqlite3.connect(str(backup_path))
     src.backup(dst)
     dst.close()
