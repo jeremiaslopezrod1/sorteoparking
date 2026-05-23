@@ -77,7 +77,12 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     csrf_token = secrets.token_urlsafe(32)
 
     # Guardar en almacen de sesiones (session_id -> TOKEN + CSRF)
-    session_store.create_session(session_id, stored_token, csrf_token)
+    creado = session_store.create_session(session_id, stored_token, csrf_token)
+    if not creado:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo crear la sesion. Intente de nuevo."
+        )
 
     # 6. Limpiar cookies viejas con paths antiguos (evita conflicto CSRF)
     # IMPORTANTE: delete_cookie debe coincidir secure/samesite con la cookie original
