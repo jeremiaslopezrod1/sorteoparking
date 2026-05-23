@@ -1,8 +1,8 @@
 """Almacenamiento de sesiones (SDD §13.11).
 
-Usa SQLite propio en /tmp/ para sesiones de admin.
+Usa SQLite propio en /data/ para sesiones de admin.
 Independiente de la BD principal (PostgreSQL).
-Ruta /tmp/ es writable en Render.
+Ruta /data/ es writable y persistente en Render.
 
 NO depende de database.py SessionLocal — evita problemas de SSL
 con PostgreSQL en Render cuando la BD principal es inaccesible.
@@ -21,8 +21,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 
-# SQLite en /tmp/ — writable en Render, ephemeral entre deploys (aceptable para sesiones)
-_SESSION_DB_PATH = os.environ.get("SESSION_DB_PATH", "/tmp/admin_sessions.db")
+# SQLite en /data/ — persistente en Render, writable en todos los entornos
+_SESSION_DB_PATH = os.environ.get("SESSION_DB_PATH", "/data/admin_sessions.db")
 
 _SessionBase = declarative_base()
 _SessionEngine = None
@@ -33,6 +33,14 @@ def _get_session_engine():
     """Engine SQLite dedicado para admin_sessions (lazy init)."""
     global _SessionEngine, _SessionLocal
     if _SessionEngine is None:
+        # Crear directorio si no existe
+        _session_dir = os.path.dirname(_SESSION_DB_PATH)
+        if _session_dir and not os.path.exists(_session_dir):
+            try:
+                os.makedirs(_session_dir, exist_ok=True)
+            except Exception as e:
+                logger.warning("No se pudo crear directorio para sesiones: %s", e)
+        
         _SessionEngine = create_engine(
             f"sqlite:///{_SESSION_DB_PATH}",
             connect_args={"timeout": 30, "check_same_thread": False},
@@ -83,7 +91,7 @@ def init_session_table(engine=None) -> bool:
 
     Args:
         engine: ignorado (mantenido por compatibilidad con main.py).
-                Siempre usa su propio engine SQLite en /tmp/.
+                Siempre usa su propio engine SQLite en /data/.
 
     Returns:
         True si la tabla existe/fue creada, False en caso de error.
@@ -113,9 +121,11 @@ def init_session_table(engine=None) -> bool:
 class SessionStore:
     """Almacenamiento de sesiones en SQLite dedicado.
 
-    Singleton. Usa su propio engine SQLite en /tmp/ — NO depende
+    Singleton. Usa su propio engine SQLite en /data/ — NO depende
     de la BD principal (PostgreSQL). Esto aisla las sesiones de
     problemas de conectividad con PostgreSQL en Render.
+    
+    /data/ es persistente en Render, a diferencia de /tmp/.
     """
 
     _instance = None
