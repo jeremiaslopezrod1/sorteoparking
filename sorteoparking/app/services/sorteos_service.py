@@ -900,9 +900,21 @@ def confirmar_otp(
 
 
 
-def estado_otp(db: Session, tenant_id: str, sorteo_id: int) -> dict[str, Any]:
+def estado_otp(db: Session, tenant_id: str, sorteo_id: int, token_enlace: str | None = None) -> dict[str, Any]:
 
     """Progreso 0-5 con nombres (SDD §5.3)."""
+
+    # Cuando viene del panel OTP (sin Bearer), resolver tenant y sorteo desde token_enlace
+    if not tenant_id and token_enlace:
+        ses = db.query(SesionOTP).filter(SesionOTP.token_enlace == token_enlace).first()
+        if not ses:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enlace invalido")
+        tenant_id = ses.tenant_id
+        if ses.sorteo_id != sorteo_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enlace no corresponde a este sorteo")
+
+    if not tenant_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Falta autenticacion")
 
     sorteo = _obtener_sorteo_tenant(db, tenant_id, sorteo_id)
 
@@ -922,6 +934,18 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int) -> dict[str, Any]:
 
     )
 
+    # Encontrar mi_estado desde token_enlace si viene de panel OTP
+    mi_estado = None
+    sesion_id = None
+    expira_en = None
+    if token_enlace:
+        for s, _ in sesiones:
+            if s.token_enlace == token_enlace:
+                mi_estado = s.estado
+                sesion_id = s.id
+                expira_en = s.expira_en.isoformat() if s.expira_en else None
+                break
+
     items: list[dict[str, str]] = []
 
     for ses, cons in sesiones:
@@ -930,7 +954,7 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int) -> dict[str, Any]:
 
             {
 
-                "consejero_nombre": cons.nombre,
+                "nombre": cons.nombre,
 
                 "estado": ses.estado,
 
@@ -947,6 +971,9 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int) -> dict[str, Any]:
         "total": len(sesiones),
 
         "consejeros": items,
+        "mi_estado": mi_estado,
+        "sesion_id": sesion_id,
+        "expira_en": expira_en,
 
     }
 

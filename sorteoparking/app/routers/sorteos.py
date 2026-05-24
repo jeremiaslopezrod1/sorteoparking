@@ -271,11 +271,16 @@ def otp_confirmar(
 
 @router.get("/{sorteo_id}/otp/estado")
 
-def otp_estado(request: Request, sorteo_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+def otp_estado(
+    request: Request,
+    sorteo_id: int,
+    token_enlace: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
 
     tenant_id = request.state.tenant_id
 
-    return estado_otp(db=db, tenant_id=tenant_id, sorteo_id=sorteo_id)
+    return estado_otp(db=db, tenant_id=tenant_id, sorteo_id=sorteo_id, token_enlace=token_enlace)
 
 
 

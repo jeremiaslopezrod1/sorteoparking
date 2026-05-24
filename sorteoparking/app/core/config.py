@@ -22,6 +22,11 @@ class SecurityConfig(BaseModel):
         """SDD §5.3 + §6.2: consejero confirma desde panel sin token de tenant."""
         return bool(re.match(r"^/sorteos/\d+/otp/confirmar/?$", path))
 
+    @staticmethod
+    def es_get_estado_otp_sin_bearer(path: str) -> bool:
+        """SDD §5.3: consejero consulta estado OTP desde panel sin token de tenant."""
+        return bool(re.match(r"^/sorteos/\d+/otp/estado/?$", path))
+
 
 security_config = SecurityConfig()
 

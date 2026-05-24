@@ -30,6 +30,15 @@ def _acceso_confirmar_otp_consejero(request: Request) -> bool:
     return bool(token_header)
 
 
+def _acceso_consultar_otp_estado_sin_bearer(request: Request) -> bool:
+    """GET /sorteos/{id}/otp/estado?token_enlace=... desde panel (SDD §5.3)."""
+    if request.method != "GET":
+        return False
+    if not security_config.es_get_estado_otp_sin_bearer(request.url.path):
+        return False
+    return True
+
+
 def parse_tenant_id_from_token(token: str) -> str:
     # SDD §3.3 y §5: el token identifica al tenant.
     try:
@@ -47,6 +56,9 @@ def get_auth_context(request: Request) -> AuthContext:
 
     if _acceso_confirmar_otp_consejero(request):
         # Explicitly set tenant_id="" for OTP confirm path (no tenant context)
+        return AuthContext(tenant_id="")
+
+    if _acceso_consultar_otp_estado_sin_bearer(request):
         return AuthContext(tenant_id="")
 
     auth_header = request.headers.get(security_config.auth_header_name, "")

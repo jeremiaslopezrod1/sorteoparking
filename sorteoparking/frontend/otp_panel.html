@@ -201,17 +201,28 @@
 
       async function fetchEstado() {
         try {
+          console.log('OTP FETCH | sorteoId=' + sorteoId + ' token=' + (token ? token.slice(0,8)+'...' : 'NONE'));
           const res = await fetch('/sorteos/' + sorteoId + '/otp/estado?token_enlace=' + encodeURIComponent(token));
+          console.log('OTP RES | status=' + res.status + ' statusText=' + res.statusText);
           if (!res.ok) {
+            console.log('OTP ERROR | status=' + res.status + ' body=' + await res.text().catch(()=>'(no body)'));
             if (res.status === 404) {
               loadingEl.style.display = 'none';
               errorEl.style.display = '';
+              errorEl.innerHTML = '<h2 style="font-size:20px;font-weight:600;color:#f5f5f7;margin-bottom:8px">Enlace inválido</h2><p style="font-size:15px;color:rgba(255,255,255,0.45)">' + (res.statusText) + '</p>';
               clearInterval(fetchTimer);
               return;
             }
+            // For 401/403: show error state so user knows it failed
+            loadingEl.style.display = 'none';
+            errorEl.style.display = '';
+            clearInterval(fetchTimer);
             return;
           }
           const data = await res.json();
+          console.log('OTP DATA:', JSON.stringify(data, null, 2));
+          console.log('OTP mi_estado:', data.mi_estado);
+          console.log('OTP confirmados:', data.confirmados, 'total:', data.total);
 
           // Store session info
           if (data.sesion_id) sesionId = data.sesion_id;
@@ -220,13 +231,14 @@
           // Show OTP state
           loadingEl.style.display = 'none';
           otpStateEl.style.display = '';
+          console.log('otpState visible');
 
           // Update progress
           const confirmados = data.confirmados || 0;
           const total = data.total || 5;
           document.getElementById('progress-label').textContent = 'Consejeros confirmados: ' + confirmados + '/' + total;
           document.getElementById('progress-bar').style.width = (confirmados / total * 100) + '%';
-          if (confirmados === total) {
+          if (confirmados === total && total > 0) {
             document.getElementById('progress-bar').classList.add('complete');
           }
 
@@ -248,6 +260,7 @@
           }
 
           // Check if current consejero already confirmed
+          console.log('OTP mi_estado check:', data.mi_estado, data.mi_estado === 'CONFIRMADO');
           if (data.mi_estado === 'CONFIRMADO') {
             otpStateEl.innerHTML = `
               <div class="otp-all-confirmed">
@@ -271,7 +284,8 @@
           }
 
           // If all confirmed, show all-confirmed state after a moment
-          if (confirmados === total) {
+          console.log('OTP allConfirmed check:', confirmados, '===', total, '->', confirmados === total);
+          if (confirmados === total && total > 0) {
             setTimeout(() => {
               otpStateEl.style.display = 'none';
               allConfirmedEl.style.display = '';
@@ -279,7 +293,9 @@
               clearInterval(timerInterval);
             }, 1500);
           }
-        } catch(e) {}
+        } catch(e) {
+          console.error('OTP FETCH_EXCEPTION:', e);
+        }
       }
 
       function updateTimer() {
