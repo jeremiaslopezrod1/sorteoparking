@@ -20,7 +20,9 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.core.config import email_config, super_admin_config
+from app.core.session_store import AdminSession
 from app.db.database import DATABASE_URL, SessionLocal
+from app.models.password_reset import SuperAdminCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -334,3 +336,64 @@ Jarvis"""
             "smtp_port": port,
             "from": from_addr,
         }
+
+
+# ──────────────────────────────────────────────
+#  /debug/reset-admin-password — TEMPORAL
+#  Restablece la contraseña del SuperAdmin.
+#  ELIMINAR después de usar.
+# ──────────────────────────────────────────────
+@router.post("/reset-admin-password")
+def reset_admin_password():
+    """[TEMPORAL] Restablece contraseña del admin Michael a Admin2026!"""
+    from argon2 import PasswordHasher
+
+    logger.warning("ADMIN RESET START")
+
+    username = "Michael"
+    new_password = "Admin2026!"
+    email = "pruebaalisocajica@gmail.com"
+
+    db = None
+    try:
+        # Mismo PasswordHasher que auth.py (defaults: time_cost=3, memory_cost=65536, parallelism=4)
+        ph = PasswordHasher()
+        new_hash = ph.hash(new_password)
+        logger.warning("ADMIN RESET hash_generado | username=%s", username)
+
+        db = SessionLocal()
+
+        # Guardar en BD (superadmin_credentials — login lo lee de aquí primero)
+        SuperAdminCredentials.guardar_o_actualizar(email, new_hash, db)
+        logger.warning("ADMIN RESET credenciales_guardadas_en_bd")
+
+        # Invalidar TODAS las sesiones activas
+        revoked = db.query(AdminSession).filter(
+            AdminSession.revoked_at.is_(None)
+        ).update({"revoked_at": datetime.now(timezone.utc)})
+        db.commit()
+        logger.warning("ADMIN RESET sesiones_invalidadas=%d", revoked)
+
+        logger.warning("ADMIN RESET OK | username=%s | email=%s", username, email)
+
+        return {
+            "ok": True,
+            "username": username,
+            "message": "Contraseña restablecida. Usa Admin2026! para ingresar."
+        }
+
+    except Exception as e:
+        logger.error("ADMIN RESET FAILED | error=%s", e)
+        if db:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return {
+            "ok": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+    finally:
+        if db:
+            db.close()
