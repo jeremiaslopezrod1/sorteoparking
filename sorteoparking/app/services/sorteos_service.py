@@ -526,186 +526,203 @@ def iniciar_sorteo(
 ) -> dict[str, Any]:
 
     """Crea consejeros, OTPs, snapshot y envia OTP por email (SDD §5.3, §6.2)."""
+    logger.warning("INICIAR_SORTEO_START | tenant=%s sorteo_id=%s total_consejeros=%d", tenant_id, sorteo_id, len(consejeros))
+    emails_consejeros = [c.get("email") for c in consejeros]
+    logger.warning("INICIAR_SORTEO_CONSEJEROS | tenant=%s sorteo_id=%s emails=%s", tenant_id, sorteo_id, emails_consejeros)
 
-    if len(consejeros) != 5:
+    try:
+        if len(consejeros) != 5:
 
-        raise HTTPException(
+            raise HTTPException(
 
-            status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_400_BAD_REQUEST,
 
-            detail="Se requieren exactamente 5 consejeros",
+                detail="Se requieren exactamente 5 consejeros",
 
-        )
+            )
 
-    sorteo = _obtener_sorteo_tenant(db, tenant_id, sorteo_id)
+        sorteo = _obtener_sorteo_tenant(db, tenant_id, sorteo_id)
 
-    enforce_tenant_scope(tenant_id, sorteo.tenant_id)
+        enforce_tenant_scope(tenant_id, sorteo.tenant_id)
 
-    if sorteo.estado != "PENDIENTE":
+        if sorteo.estado != "PENDIENTE":
 
-        raise HTTPException(
+            raise HTTPException(
 
-            status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_400_BAD_REQUEST,
 
-            detail="El sorteo no esta en estado PENDIENTE",
+                detail="El sorteo no esta en estado PENDIENTE",
 
-        )
+            )
 
-    if _hay_sorteo_activo_otro(db, tenant_id, sorteo_id):
+        if _hay_sorteo_activo_otro(db, tenant_id, sorteo_id):
 
-        raise HTTPException(
+            raise HTTPException(
 
-            status_code=status.HTTP_409_CONFLICT,
+                status_code=status.HTTP_409_CONFLICT,
 
-            detail="Ya existe un sorteo en curso para este conjunto",
+                detail="Ya existe un sorteo en curso para este conjunto",
 
-        )
+            )
 
-    # SDD §15.7 — Verificar que haya catálogo cargado antes de iniciar
-    tiene_catalogo = db.query(Parqueadero).filter(
-        Parqueadero.tenant_id == tenant_id
-    ).first()
-    if not tiene_catalogo:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No hay catálogo de parqueaderos cargado. Use POST /catalogo/carga-csv primero.",
-        )
+        # SDD §15.7 — Verificar que haya catálogo cargado antes de iniciar
+        tiene_catalogo = db.query(Parqueadero).filter(
+            Parqueadero.tenant_id == tenant_id
+        ).first()
+        if not tiene_catalogo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No hay catálogo de parqueaderos cargado. Use POST /catalogo/carga-csv primero.",
+            )
 
-    participantes = (
+        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=participantes_y_snapshot", tenant_id, sorteo_id)
+        participantes = (
 
-        db.query(Participante)
+            db.query(Participante)
 
-        .filter(Participante.tenant_id == tenant_id, Participante.sorteo_id == sorteo_id)
+            .filter(Participante.tenant_id == tenant_id, Participante.sorteo_id == sorteo_id)
 
-        .order_by(Participante.id)
+            .order_by(Participante.id)
 
-        .all()
-
-    )
-
-    if not participantes:
-
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No hay participantes cargados")
-
-    sorteo.snapshot_hash = _calcular_snapshot_hash(participantes)
-
-    sorteo.estado = "EN_CURSO"
-
-    db.query(SesionOTP).filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id).delete()
-
-    db.query(Consejero).filter(Consejero.sorteo_id == sorteo_id, Consejero.tenant_id == tenant_id).delete()
-
-    db.flush()
-
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-
-    nombre_conjunto = tenant.nombre if tenant else "Conjunto"
-
-    expira = now() + timedelta(minutes=30)
-
-    sesiones_creadas: list[tuple[SesionOTP, Consejero, str]] = []
-
-    for item in consejeros:
-
-        nombre_c = str(item.get("nombre") or "").strip()
-
-        email_c = (str(item.get("email")).strip() if item.get("email") else None) or None
-
-        if not nombre_c or not email_c:
-
-            db.rollback()
-
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cada consejero requiere nombre y email")
-
-        cons = Consejero(
-
-            tenant_id=tenant_id,
-
-            sorteo_id=sorteo_id,
-
-            nombre=nombre_c,
-
-            email=email_c,
+            .all()
 
         )
 
-        db.add(cons)
+        if not participantes:
+
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No hay participantes cargados")
+
+        sorteo.snapshot_hash = _calcular_snapshot_hash(participantes)
+
+        sorteo.estado = "EN_CURSO"
+
+        db.query(SesionOTP).filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id).delete()
+
+        db.query(Consejero).filter(Consejero.sorteo_id == sorteo_id, Consejero.tenant_id == tenant_id).delete()
 
         db.flush()
 
-        otp_plano = generar_otp_numerico_seis_digitos()
+        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=creacion_otp_db", tenant_id, sorteo_id)
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
 
-        token_enlace = secrets.token_urlsafe(32)
+        nombre_conjunto = tenant.nombre if tenant else "Conjunto"
 
-        ses = SesionOTP(
+        expira = now() + timedelta(minutes=30)
 
-            tenant_id=tenant_id,
+        sesiones_creadas: list[tuple[SesionOTP, Consejero, str]] = []
 
-            sorteo_id=sorteo_id,
+        for item in consejeros:
 
-            consejero_id=cons.id,
+            nombre_c = str(item.get("nombre") or "").strip()
 
-            otp_hash=hashear_otp(otp_plano),
+            email_c = (str(item.get("email")).strip() if item.get("email") else None) or None
 
-            token_enlace=token_enlace,
+            if not nombre_c or not email_c:
 
-            estado="PENDIENTE",
+                db.rollback()
 
-            expira_en=expira,
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cada consejero requiere nombre y email")
 
-        )
+            cons = Consejero(
 
-        db.add(ses)
+                tenant_id=tenant_id,
 
-        sesiones_creadas.append((ses, cons, otp_plano))
+                sorteo_id=sorteo_id,
 
-    db.flush()
+                nombre=nombre_c,
 
-    otp_debug_info: list[dict[str, str]] = []
+                email=email_c,
 
-    es_desarrollo = (
+            )
 
-        deploy_config.app_env == "development" and os.getenv("DEBUG", "false").lower() == "true"
+            db.add(cons)
 
-    )
-
-    for ses, cons, otp_plano in sesiones_creadas:
-
-        cuerpo = _mensaje_otp_consejero(nombre_conjunto, cons.nombre, otp_plano, ses.token_enlace, sorteo_id)
-
-        ok, canal = _entregar_mensaje_consejero(
-
-            cons.email,
-
-            f"OTP SorteoParking — {nombre_conjunto}",
-
-            cuerpo,
-
-        )
-
-        if not ok and not es_desarrollo:
-            # Marcar esta sesion como fallida en lugar de rollback total
-            ses.estado = "FALLO_EMAIL"
             db.flush()
-            logger.warning("No se pudo enviar OTP por correo a %s", cons.email)
 
-        if es_desarrollo and deploy_config.app_env == "development":
+            otp_plano = generar_otp_numerico_seis_digitos()
 
-            base = public_urls_config.public_base_url.rstrip("/")
+            token_enlace = secrets.token_urlsafe(32)
 
-            otp_debug_info.append({
+            ses = SesionOTP(
 
-                "consejero": cons.nombre,
+                tenant_id=tenant_id,
 
-                "otp": otp_plano,
+                sorteo_id=sorteo_id,
 
-                "link": f"{base}/static/otp_panel.html#t={ses.token_enlace}&sid={sorteo_id}",
+                consejero_id=cons.id,
 
-                "canal": canal if ok else "NO_ENVIADO (modo desarrollo)",
+                otp_hash=hashear_otp(otp_plano),
 
-            })
+                token_enlace=token_enlace,
 
-    db.commit()
+                estado="PENDIENTE",
+
+                expira_en=expira,
+
+            )
+
+            db.add(ses)
+
+            sesiones_creadas.append((ses, cons, otp_plano))
+
+        db.flush()
+
+        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=envio_smtp consejeros_creados=%d", tenant_id, sorteo_id, len(sesiones_creadas))
+        otp_debug_info: list[dict[str, str]] = []
+
+        es_desarrollo = (
+
+            deploy_config.app_env == "development" and os.getenv("DEBUG", "false").lower() == "true"
+
+        )
+
+        for ses, cons, otp_plano in sesiones_creadas:
+            try:
+                cuerpo = _mensaje_otp_consejero(nombre_conjunto, cons.nombre, otp_plano, ses.token_enlace, sorteo_id)
+
+                ok, canal = _entregar_mensaje_consejero(
+
+                    cons.email,
+
+                    f"OTP SorteoParking — {nombre_conjunto}",
+
+                    cuerpo,
+
+                )
+            except Exception as e:
+                logger.exception("INICIAR_SORTEO_SMTP_ERROR | tenant=%s sorteo_id=%s consejero=%s email=%s", tenant_id, sorteo_id, cons.nombre, cons.email)
+                ok = False
+                canal = "excepcion"
+
+            if not ok and not es_desarrollo:
+                # Marcar esta sesion como fallida en lugar de rollback total
+                ses.estado = "FALLO_EMAIL"
+                db.flush()
+                logger.warning("No se pudo enviar OTP por correo a %s", cons.email)
+
+            if es_desarrollo and deploy_config.app_env == "development":
+
+                base = public_urls_config.public_base_url.rstrip("/")
+
+                otp_debug_info.append({
+
+                    "consejero": cons.nombre,
+
+                    "otp": otp_plano,
+
+                    "link": f"{base}/static/otp_panel.html#t={ses.token_enlace}&sid={sorteo_id}",
+
+                    "canal": canal if ok else "NO_ENVIADO (modo desarrollo)",
+
+                })
+
+        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=commit", tenant_id, sorteo_id)
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("INICIAR_SORTEO_EXCEPTION | tenant=%s sorteo_id=%s", tenant_id, sorteo_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     registrar_log_auditoria(
 

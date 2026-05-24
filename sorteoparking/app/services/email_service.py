@@ -20,7 +20,11 @@ def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
     user = email_config.smtp_user
     password = email_config.smtp_password
     from_addr = email_config.smtp_from or user
+    logger.warning("SMTP_DIAG | host=%s user=%s from=%s port=%s destino=%s",
+                   bool(host), bool(user), bool(from_addr), email_config.smtp_port, destino)
     if not host or not from_addr:
+        logger.warning("SMTP_FALTA_CONFIG | host=%s from=%s user=%s pass=%s",
+                       bool(host), bool(from_addr), bool(user), bool(password))
         return False
 
     msg = MIMEText(cuerpo, "plain", "utf-8")
@@ -43,9 +47,10 @@ def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
                 if user and password:
                     smtp.login(user, password)
                 smtp.sendmail(from_addr, [destino], msg.as_string())
+        logger.warning("SMTP_ENVIO_OK | destino=%s", destino)
         return True
-    except (OSError, smtplib.SMTPException) as e:
-        logger.warning("Error enviando correo a %s: %s", destino, str(e))
+    except Exception as e:
+        logger.exception("SMTP_ENVIO_ERROR | destino=%s host=%s port=%s", destino, host, email_config.smtp_port)
         return False
 
 
