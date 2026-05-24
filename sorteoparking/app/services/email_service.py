@@ -50,7 +50,10 @@ def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
         logger.warning("SMTP_ENVIO_OK | destino=%s", destino)
         return True
     except Exception as e:
-        logger.exception("SMTP_ENVIO_ERROR | destino=%s host=%s port=%s", destino, host, email_config.smtp_port)
+        smtp_code = getattr(e, 'smtp_code', None)
+        smtp_error = getattr(e, 'smtp_error', None)
+        logger.exception("SMTP_SEND_ERROR | destino=%s host=%s port=%s smtp_code=%s smtp_error=%s",
+                         destino, host, email_config.smtp_port, smtp_code, smtp_error)
         return False
 
 
