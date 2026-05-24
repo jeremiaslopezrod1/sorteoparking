@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.db.database import SessionLocal
 from app.services.catalogo_service import listar_parqueaderos_por_tenant, listar_zonas_por_tenant, cargar_catalogo_desde_excel
@@ -72,6 +75,7 @@ def listar_parqueaderos(request: Request, db: Session = Depends(get_db)) -> list
 async def cargar_catalogo(request: Request, archivo: UploadFile = File(...), db: Session = Depends(get_db)) -> ResumenCarga:
     """Importa CSV o Excel de parqueaderos usando parser inteligente (SDD §14, §15)."""
     tenant_id = request.state.tenant_id
+    logger.warning("UPLOAD RECIBIDO: tenant=%s filename=%s content_type=%s", tenant_id, archivo.filename, archivo.content_type)
     
     # Verificar que no haya parqueaderos ya cargados
     existentes = db.query(Parqueadero).filter(Parqueadero.tenant_id == tenant_id).count()
