@@ -313,6 +313,20 @@
 
       function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+      function extractErrorMessage(payload) {
+        if (!payload) return 'Error desconocido';
+        if (typeof payload === 'string') return payload;
+        if (payload.detail) {
+          if (typeof payload.detail === 'string') return payload.detail;
+          if (Array.isArray(payload.detail)) {
+            return payload.detail.map(x => x.msg || JSON.stringify(x)).join(', ');
+          }
+          return JSON.stringify(payload.detail);
+        }
+        if (payload.message) return payload.message;
+        return JSON.stringify(payload);
+      }
+
       // Submit OTP
       submitBtn.addEventListener('click', async () => {
         const otp = getOtpValue();
@@ -325,7 +339,7 @@
           const res = await fetch('/sorteos/' + sorteoId + '/otp/confirmar', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Sorteo-Otp-Token': token },
-            body: JSON.stringify({ codigo: otp }),
+            body: JSON.stringify({ otp: otp }),
           });
 
           if (res.ok) {
@@ -347,16 +361,16 @@
             fetchTimer = setInterval(fetchEstado, 2000);
             setTimeout(fetchEstado, 1000);
           } else {
-            // Error
-            const data = await res.json().catch(() => ({}));
-            otpErrorEl.textContent = data.detail || 'Código incorrecto. Intente nuevamente.';
+            const payload = await res.json().catch(() => null);
+            otpErrorEl.textContent = extractErrorMessage(payload);
             otpErrorEl.style.display = '';
             digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
             digits[0].focus();
             submitBtn.disabled = true;
           }
-        } catch(e) {
-          otpErrorEl.textContent = 'Error de conexión';
+        } catch(err) {
+          console.error('OTP submit error', err);
+          otpErrorEl.textContent = err?.message || 'Error de conexión';
           otpErrorEl.style.display = '';
         }
         submitBtn.textContent = 'Confirmar OTP';
