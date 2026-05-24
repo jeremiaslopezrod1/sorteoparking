@@ -607,7 +607,7 @@ def iniciar_sorteo(
 
         nombre_conjunto = tenant.nombre if tenant else "Conjunto"
 
-        expira = now() + timedelta(minutes=30)
+        expira = datetime.now() + timedelta(minutes=30)
 
         sesiones_creadas: list[tuple[SesionOTP, Consejero, str]] = []
 
@@ -811,14 +811,14 @@ def confirmar_otp(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP ya utilizado — no se puede reutilizar")
 
     # SDD §6.4 — Verificar expiración
-    if ses.estado == "PENDIENTE" and now() > ses.expira_en:
+    if ses.estado == "PENDIENTE" and datetime.now() > ses.expira_en:
 
         ses.estado = "EXPIRADO"
 
         db.commit()
 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expirado")
-    elif now() > ses.expira_en:
+    elif datetime.now() > ses.expira_en:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expirado")
 
     # SDD §6.4 — Límite de 3 intentos
@@ -853,7 +853,7 @@ def confirmar_otp(
     # SDD §6.6 — Marcar como usado — single-use estricto
     ses.estado = "CONFIRMADO"
 
-    ses.confirmado_en = now()
+    ses.confirmado_en = datetime.now()
 
     db.flush()
 
