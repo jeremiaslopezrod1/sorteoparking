@@ -205,17 +205,15 @@
           const res = await fetch('/sorteos/' + sorteoId + '/otp/estado?token_enlace=' + encodeURIComponent(token));
           console.log('OTP RES | status=' + res.status + ' statusText=' + res.statusText);
           if (!res.ok) {
-            console.log('OTP ERROR | status=' + res.status + ' body=' + await res.text().catch(()=>'(no body)'));
-            if (res.status === 404) {
-              loadingEl.style.display = 'none';
-              errorEl.style.display = '';
-              errorEl.innerHTML = '<h2 style="font-size:20px;font-weight:600;color:#f5f5f7;margin-bottom:8px">Enlace inválido</h2><p style="font-size:15px;color:rgba(255,255,255,0.45)">' + (res.statusText) + '</p>';
-              clearInterval(fetchTimer);
-              return;
-            }
-            // For 401/403: show error state so user knows it failed
+            const errBody = await res.text().catch(()=>'(no body)');
+            console.log('OTP ERROR RAW | status=' + res.status + ' body=' + errBody);
+            let errPayload = null;
+            try { errPayload = JSON.parse(errBody); } catch(e) {}
+            const errMsg = extractErrorMessage(errPayload) || extractErrorMessage({detail: 'Error del servidor (HTTP ' + res.status + ')'});
+            console.log('OTP ERROR TYPE:', typeof errPayload, 'MSG:', errMsg);
             loadingEl.style.display = 'none';
             errorEl.style.display = '';
+            errorEl.innerHTML = '<h2 style="font-size:20px;font-weight:600;color:#f5f5f7;margin-bottom:8px">Error de conexión</h2><p style="font-size:15px;color:rgba(255,255,255,0.45)">' + escHtml(errMsg) + '</p>';
             clearInterval(fetchTimer);
             return;
           }
@@ -311,20 +309,36 @@
         }
       }
 
-      function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+      function safeString(v) {
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        // If it's an object, JSON.stringify to avoid [object Object]
+        try { return JSON.stringify(v); } catch(e) { return String(v); }
+      }
+
+      function escHtml(s) {
+        const str = safeString(s);
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+      }
 
       function extractErrorMessage(payload) {
         if (!payload) return 'Error desconocido';
         if (typeof payload === 'string') return payload;
+        if (payload instanceof Error) {
+          return payload.message || 'Error inesperado';
+        }
         if (payload.detail) {
           if (typeof payload.detail === 'string') return payload.detail;
           if (Array.isArray(payload.detail)) {
-            return payload.detail.map(x => x.msg || JSON.stringify(x)).join(', ');
+            return payload.detail.map(x => x.msg || safeString(x)).join(', ');
           }
-          return JSON.stringify(payload.detail);
+          return safeString(payload.detail);
         }
         if (payload.message) return payload.message;
-        return JSON.stringify(payload);
+        return safeString(payload);
       }
 
       // Submit OTP
@@ -362,6 +376,7 @@
             setTimeout(fetchEstado, 1000);
           } else {
             const payload = await res.json().catch(() => null);
+            console.log('OTP ERROR RAW:', payload, 'TYPE:', typeof payload);
             otpErrorEl.textContent = extractErrorMessage(payload);
             otpErrorEl.style.display = '';
             digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
