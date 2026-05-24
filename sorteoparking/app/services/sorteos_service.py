@@ -75,6 +75,7 @@ def listar_historial_sorteos(db: Session, tenant_id: str) -> list[Sorteo]:
         payload=f"total={len(sorteos)}",
 
     )
+    db.commit()
 
     return sorteos
 
@@ -462,6 +463,7 @@ def cargar_excel_elegibles(db: Session, tenant_id: str, contenido: bytes) -> dic
         payload=f"sorteo_id={sorteo.id},participantes={insertados},formato={'oficial' if es_formato_oficial else 'simple'}",
 
     )
+    db.commit()
 
     return {"sorteo_id": sorteo.id, "participantes_cargados": insertados}
 
@@ -735,6 +737,7 @@ def iniciar_sorteo(
         payload=f"sorteo_id={sorteo_id}",
 
     )
+    db.commit()
 
     resultado: dict[str, Any] = {
 
@@ -847,6 +850,7 @@ def confirmar_otp(
             payload=f"sorteo_id={sorteo_id},sesion_id={ses.id},intento={ses.intentos}",
 
         )
+        db.commit()
 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP invalido")
 
@@ -893,6 +897,7 @@ def confirmar_otp(
         payload=f"sorteo_id={sorteo_id},sesion_id={ses.id}",
 
     )
+    db.commit()
 
     return {"estado": "confirmado", "sorteo_estado": sorteo.estado}
 
@@ -1131,6 +1136,7 @@ def ejecutar_sorteo_asignacion(db: Session, tenant_id: str, sorteo_id: int) -> l
             payload=f"sorteo_id={sorteo_id},error={str(exc)}",
 
         )
+        db.commit()
 
         raise HTTPException(
 
@@ -1241,6 +1247,7 @@ def notificar_resultados(db: Session, tenant_id: str, sorteo_id: int) -> dict[st
         payload=f"sorteo_id={sorteo_id},ok={ok},fallos={fallos}",
 
     )
+    db.commit()
 
     return {"enviados": ok, "fallidos": fallos}
 
