@@ -38,7 +38,6 @@ sorteoparking/
 │   │   ├── sorteos_service.py
 │   │   ├── catalogo_service.py
 │   │   ├── otp_service.py
-│   │   ├── whatsapp.py
 │   │   ├── email_service.py
 │   │   ├── log_service.py
 │   │   ├── excel_parser.py
@@ -104,9 +103,9 @@ sorteoparking/
   - `PORT` o `APP_PORT` (default `8000`)
   - `DATABASE_URL` (default `sqlite:///./sorteoparking.db`)
 - Conexion de base de datos adaptada para Cloud en `app/db/database.py` usando `DATABASE_URL`.
-- Arranque compatible con Railway/Render:
+- Arranque compatible con Render:
   - `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- HTTPS en produccion delegado al proveedor Cloud (Railway/Render), segun SDD §3.2.
+- HTTPS en produccion delegado al proveedor Cloud (Render), segun SDD §3.2.
 
 ### T-106 (SDD §3.5) - Completada
 
@@ -123,34 +122,16 @@ sorteoparking/
 
 ### Mes 2 — T-201 a T-206 (SDD §5.3, §5.4, §6, §3.2) - Actualizada a v1.7
 
-- **T-201** — `app/services/email_service.py`: envío por SMTP. Variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+- **T-201** — `app/services/email_service.py`: envío por **Resend HTTP API**. Variable única: `RESEND_API_KEY`.
 - **T-202** — Panel consejero `frontend/otp_panel.html` (estatico `/static/otp_panel.html`) + confirmacion `POST /sorteos/{id}/otp/confirmar` con header `X-Sorteo-Otp-Token` (sin Bearer de tenant).
 - **T-203** — `frontend/dashboard.html`: polling cada 2s a `GET /sorteos/{id}/otp/estado` y `GET /sorteos/{id}/estado`.
-- **T-204** — `POST /sorteos/{id}/notificar`: notificación por correo electrónico a participantes. Variables SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+- **T-204** — `POST /sorteos/{id}/notificar`: notificación por correo electrónico a participantes via Resend.
 - **T-205** — `GET /p/{tenant_slug}/sorteos/{id}` y `.../seed` + `frontend/publico.html`.
-- Otros endpoints Mes 2: `POST /sorteos/carga-excel`, `POST /sorteos/iniciar`, `POST /sorteos/{id}/ejecutar` (asignacion determinista por seed SDD §6.3, distinta del motor hibrido v1.4.3 hasta integrar `sorteo_engine.py`).
+- Otros endpoints Mes 2: `POST /sorteos/carga-excel`, `POST /sorteos/iniciar`, `POST /sorteos/{id}/ejecutar` (asignacion determinista por seed SDD §6.3).
 - **Slug** en `tenants.slug` (URLs publicas SDD §5.4); onboarding asigna slug; arranque rellena slugs faltantes.
 - Variables adicionales: `PUBLIC_BASE_URL` (enlaces en mensajes OTP), `OTP_PEPPER` (hash OTP en produccion).
 
 Si la base SQLite ya existia antes de Mes 2, puede hacer falta borrar `sorteoparking.db` para recrear tablas con las nuevas columnas, o aplicar migraciones manuales.
-
-## Despliegue Cloud (Railway) - SDD §3.2
-
-Configura estas variables en el servicio de Railway:
-
-- `APP_ENV=production`
-- `APP_HOST=0.0.0.0`
-- `PORT` (Railway la inyecta automaticamente)
-- `DATABASE_URL=sqlite:///./sorteoparking.db`
-
-Comando de inicio:
-
-- `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`
-
-Validacion minima post-despliegue:
-
-- `GET /health` responde `{"status":"ok"}`
-- El servicio queda publicado por URL `https://...` administrada por Railway
 
 ### Mes 3 — T-301 (SDD §3.5, §9) - Completada
 
@@ -177,23 +158,34 @@ Validacion minima post-despliegue:
   - Cache Control diferenciado: las vistas públicas (`/p/...`) son cacheables por 5 minutos, mientras que el panel de administración y las APIs tienen cabeceras estrictas de `no-store` para evitar fugas de información.
   - Registrado como middleware prioritario para cubrir todos los flujos de respuesta incluyendo errores.
 
-## Despliegue Cloud (Railway) - SDD §3.2
+## Despliegue Cloud (Render) - SDD §3.2
 
-Configura estas variables en el servicio de Railway:
+El sistema está desplegado en **Render** con PostgreSQL.
 
-- `APP_ENV=production`
-- `APP_HOST=0.0.0.0`
-- `PORT` (Railway la inyecta automaticamente)
-- `DATABASE_URL=sqlite:///./sorteoparking.db`
+**URL de producción:** `https://sorteoparking.onrender.com`
 
-Comando de inicio:
+### Variables de Entorno en Render
 
-- `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`
+| Variable | Descripción |
+|---|---|
+| `APP_ENV` | `production` |
+| `DATABASE_URL` | PostgreSQL URL (Render la inyecta) |
+| `RESEND_API_KEY` | API key de Resend para envío de correos |
+| `RESEND_FROM` | Dirección remitente (default: `onboarding@resend.dev`) |
+| `OTP_PEPPER` | Pepper para hash SHA-256 de OTPs |
+| `PUBLIC_BASE_URL` | `https://sorteoparking.onrender.com` |
+| `SUPER_ADMIN_TOKEN` | (opcional) Token UUID para bypass en desarrollo |
 
-Validacion minima post-despliegue:
+### Comando de inicio
+
+```
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+### Validacion minima post-despliegue
 
 - `GET /health` responde `{"status":"ok"}`
-- El servicio queda publicado por URL `https://...` administrada por Railway
+- El servicio queda publicado por URL `https://sorteoparking.onrender.com`
 
 ## Gestión de SUPER_ADMIN (SDD §2, §5.1)
 
@@ -216,13 +208,13 @@ python -m app.scripts.create_superadmin --env-only
 - `SUPER_ADMIN_TOKEN`: Token UUID para bypass de base de datos en entornos de desarrollo.
 - `OTP_PEPPER`: Pepper para el hash SHA-256 de los OTPs.
 - `PUBLIC_BASE_URL`: URL base para los enlaces enviados por correo a los consejeros.
+- `RESEND_API_KEY`: API key de Resend para envío de correos (reemplaza a SMTP).
 
 ## ADVERTENCIA — OTPs en entornos de desarrollo
 
 - En entornos de desarrollo la API puede incluir información de depuración sobre los OTPs generados al ejecutar `POST /sorteos/iniciar` bajo la clave `_dev_otps` en la respuesta. Esto ocurre únicamente cuando se cumplen ambas condiciones: `APP_ENV=development` y `DEBUG=true`.
 - **Riesgo:** Si se activa `DEBUG=true` en entornos de staging o compartidos, los OTPs podrían exponerse a usuarios no autorizados y comprometer la seguridad del sorteo.
 - **Recomendación:** Nunca establecer `DEBUG=true` fuera de su máquina de desarrollo local. Para entornos de prueba compartidos (staging) use `APP_ENV=production` o deje `DEBUG` vacío/`false`.
-
 
 ## Backup de base de datos (SDD §18, T-121)
 
@@ -239,13 +231,11 @@ python -m app.scripts.backup_db
 ls -lh /data/backups/
 
 **Antes de cada sorteo ejecutar:**
-python -m app.scripts.backup_db
+python -m app.scripts.backup_db (solo SQLite)
 
 **Variables de entorno:**
-- BACKUP_DIR: directorio de backups 
-  (default: /data/backups)
-- BACKUP_RETENTION_DAYS: días a retener 
-  (default: 30)
+- BACKUP_DIR: directorio de backups (default: /data/backups)
+- BACKUP_RETENTION_DAYS: días a retener (default: 30)
 
 ## Cabeceras de Seguridad HTTP (SDD §19, T-122)
 
@@ -263,15 +253,47 @@ El sistema integra `SecurityHeadersMiddleware` para mitigar vectores de ataque c
 - **Rutas Públicas (`/p/...`)**: Aplica caché público de 5 minutos (`Cache-Control: public, max-age=300, stale-while-revalidate=60`).
 - **Otras Rutas (Admin, APIs)**: Fuerza la no persistencia en caché (`Cache-Control: no-store, no-cache, must-revalidate`).
 
+## Fixes recientes
+
+### CORS + Upload multipart (Mayo 2026)
+
+- Agregado `CORSMiddleware` con origen `https://sorteoparking.onrender.com`, credentials y headers.
+- El middleware `tenant_auth_middleware` permite preflight `OPTIONS` sin Bearer token.
+- `/favicon.ico` responde `204` sin pasar por auth (elimina ruido en logs).
+- Logs de diagnóstico temporales en `POST /catalogo/carga-csv`.
+
+### SMTP → Resend HTTP API (Mayo 2026)
+
+- Reemplazado `smtplib` + Gmail SMTP por `resend.Emails.send()`.
+- Render Free bloquea conexiones SMTP salientes (`Errno 101 Network is unreachable`).
+- Variable única `RESEND_API_KEY` en lugar de `SMTP_HOST/PORT/USER/PASSWORD/FROM`.
+- Misma firma pública `enviar_correo_texto(destino, asunto, cuerpo) -> bool`.
+
+### OTP panel — Auth bypass + fix error rendering (Mayo 2026)
+
+- `GET /sorteos/{id}/otp/estado` ahora es accesible sin Bearer token mediante `token_enlace` query param.
+- Sigue el mismo patrón de `POST /sorteos/{id}/otp/confirmar`.
+- El frontend ya no silencia errores 401/403 — muestra el mensaje real del servidor.
+- `[object Object]` eliminado: función `safeString()` + `extractErrorMessage()` en todos los DOM writes.
+
+### Auditoría — Logs ahora se persisten (Mayo 2026)
+
+- `registrar_log_auditoria()` solo hacía `flush()` sin `commit()`.
+- Agregado `db.commit()` después de cada una de las 7 llamadas.
+- Nuevo evento `SORTEO_EJECUTADO` en el success path de `ejecutar_sorteo_asignacion`.
+- La hoja "Log Auditoria" del Excel exportado ahora contiene los datos reales.
+
 ## Estado Actual
 
-- **Base de datos**: SQLite local (`sorteoparking.db`).
-- **Stack**: FastAPI + SQLAlchemy + openpyxl + **Motor Híbrido v1.4.3**.
-- **Hito**: Sistema listo para piloto en Aliso Vivienda con cumplimiento total de SDD v1.7 (incluyendo backups y seguridad reforzada T-121 y T-122).
+- **Despliegue**: Render (PostgreSQL, Free Tier).
+- **URL**: `https://sorteoparking.onrender.com`
+- **Correos**: Resend HTTP API (no SMTP).
+- **Stack**: FastAPI + SQLAlchemy + openpyxl + Motor Híbrido v1.4.3.
+- **Hito**: Sistema listo para piloto en Aliso Vivienda con cumplimiento total de SDD v1.7.
 
 ## Sistema de Diseño Apple
 
-El frontend usa el **Apple Design System** generado con 
+El frontend usa el **Apple Design System** generado con
 px getdesign@latest add apple.
 
 - apple/DESIGN.md: diseño original generado por getdesign
@@ -280,4 +302,4 @@ px getdesign@latest add apple.
 
 **Características:** Action Blue #0066cc · Botones pill · SF Pro Text (system-ui) · Sin sombras decorativas · Tarjetas 18px border-radius · Nav oscuro 44px.
 
-*Última actualización: Mayo 2026 — sincronizado con SDD v1.7*
+*Última actualización: Mayo 2026 — sincronizado con SDD v1.7 — desplegado en Render*
