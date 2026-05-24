@@ -992,7 +992,85 @@ DEEPSEEK_MIN_CONFIDENCE=0.80
 
 ---
 
-## 18. Fuera de Alcance — v2.0
+## 18. Plan de Implementación
+
+### Mes 1 — Multi-tenant y despliegue Cloud
+
+| ID | Tarea | Spec ref. | Estado |
+|---|---|---|---|
+| T-101 | Entidad Tenant + `tenant_id` en tablas | §4.1 · §4.2 | ✅ |
+| T-102 | Middleware auth + aislamiento tenant | §3.3 · §3.5 | ✅ |
+| T-103 | Endpoints SUPER_ADMIN | §5.1 | ✅ |
+| T-104 | Onboarding formulario dashboard | §3.1 | ✅ |
+| T-105 | Despliegue Render con HTTPS y env vars | §3.2 | ✅ |
+| T-106 | Migrar catálogo, sorteo y log con tenant_id | §3.5 | ✅ |
+| T-107 | Login SUPER_ADMIN con enmascaramiento | §13 | ✅ |
+
+### Mes 2 — OTP remoto y notificaciones
+
+| ID | Tarea | Spec ref. | Estado |
+|---|---|---|---|
+| T-201 | Integración Resend HTTP API (reemplaza SMTP) | §7 | ✅ |
+| T-202 | Panel OTP remoto con token_enlace | §6 · §10 | ✅ |
+| T-203 | Polling estado OTP en dashboard | §6.7 | ✅ |
+| T-204 | Notificación resultados por correo | §5.3 · §7 | ✅ |
+| T-205 | Vista pública residente sin login | §5.5 | ✅ |
+| T-206 | CORS + preflight OPTIONS + upload multipart | §3.5.2 | ✅ |
+
+### Mes 3 — Piloto y parser inteligente
+
+| ID | Tarea | Spec ref. | Estado |
+|---|---|---|---|
+| T-301 | Motor híbrido + ejecución sorteo | §3.7 · §11 | ✅ |
+| T-302 | Estados del sorteo con transiciones | §17 | ✅ |
+| T-303 | Panel de métricas SUPER_ADMIN | — | ⬜ |
+| T-304 | Flujo de pago previo al evento | — | ⬜ |
+| T-305 | Primer cliente externo | — | ⬜ |
+
+### Mes 4 — Parser Inteligente y Exportación
+
+| ID | Tarea | Spec ref. | Estado |
+|---|---|---|---|
+| T-108 | Parser DeepSeek Flash para Excel | §15 | ✅ |
+| T-109 | Catálogo maestro: carga + plantilla | §5.2 · §15.3 | ✅ |
+| T-110 | Exportación: 5 hojas + Log Auditoria | §9 | ✅ |
+
+### Mes 5 — Hardening AppSec
+
+| ID | Tarea | Spec ref. | Estado |
+|---|---|---|---|
+| T-111 | Sesiones SUPER_ADMIN en SQLite | §13.4 | ✅ |
+| T-112 | OTP 6 dígitos + rate limit + hash | §6.4 | ✅ |
+| T-113 | Snapshot_hash en ejecución | §6.6 | ✅ |
+| T-114 | SQLAlchemy con timeouts y WAL | — | ✅ |
+| T-115 | Límites seguridad carga Excel | §14.10 | ✅ |
+| T-116 | Auditoría: hash chain + commit posterior | §8 | ✅ |
+
+### Mes 6 — Hardening crítico piloto
+
+| ID | Tarea | Spec ref. | Hallazgo | Estado |
+|---|---|---|---|---|
+| T-117 | Tests anti-IDOR multi-tenant | §3.5 | C-03 | ✅ |
+| T-118 | Anti-replay OTP con with_for_update | §6.6 | C-04 | ✅ |
+| T-119 | Formula injection en exportadores | §9.2 | C-08 | ✅ |
+| T-120 | Race condition mutex en ejecución | §3.7 | C-10 | ✅ |
+| T-121 | Backup diario SQLite con verificación | — | C-12 | ✅ |
+| T-122 | HTTP Security Headers middleware | §3.5.5 | C-07 | ✅ |
+
+### Correcciones post-despliegue (Mayo 2026)
+
+| ID | Tarea | Estado |
+|---|---|---|
+| T-206 | CORS + preflight OPTIONS para upload multipart | ✅ |
+| T-207 | Migración SMTP → Resend HTTP API | ✅ |
+| T-208 | Auth bypass OTP panel (token_enlace) | ✅ |
+| T-209 | Fix `[object Object]` en errores frontend | ✅ |
+| T-210 | Fix auditoría no persistente (commit posterior) | ✅ |
+| T-211 | Agregar SORTEO_EJECUTADO al log de auditoría | ✅ |
+
+---
+
+## 19. Fuera de Alcance — v2.0
 
 - Pasarela de pagos automática
 - App móvil nativa (iOS / Android)
