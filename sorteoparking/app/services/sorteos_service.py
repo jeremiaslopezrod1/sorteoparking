@@ -1146,6 +1146,19 @@ def ejecutar_sorteo_asignacion(db: Session, tenant_id: str, sorteo_id: int) -> l
 
         ) from exc
 
+    registrar_log_auditoria(
+
+        db=db,
+
+        tenant_id=tenant_id,
+
+        evento="SORTEO_EJECUTADO",
+
+        payload=f"sorteo_id={sorteo_id}",
+
+    )
+    db.commit()
+
     return db.query(ResultadoSorteo).filter(
 
         ResultadoSorteo.sorteo_id == sorteo_id,
