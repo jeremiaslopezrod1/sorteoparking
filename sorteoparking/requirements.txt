@@ -7,5 +7,6 @@ argon2-cffi
 slowapi
 python-dotenv
 pandas
+resend
 python-docx
 psycopg2-binary

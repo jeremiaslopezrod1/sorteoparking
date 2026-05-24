@@ -46,13 +46,10 @@ class OtpConfig(BaseModel):
 
 
 class EmailConfig(BaseModel):
-    """SMTP para fallback SDD §3.2 / T-206."""
+    """Resend HTTP API para envio de correos SDD §3.2 / T-206."""
 
-    smtp_host: str | None = os.getenv("SMTP_HOST")
-    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user: str | None = os.getenv("SMTP_USER")
-    smtp_password: str | None = os.getenv("SMTP_PASSWORD")
-    smtp_from: str | None = os.getenv("SMTP_FROM")
+    resend_api_key: str | None = os.getenv("RESEND_API_KEY")
+    resend_from: str = os.getenv("RESEND_FROM", "onboarding@resend.dev")
 
 
 class PublicUrlsConfig(BaseModel):

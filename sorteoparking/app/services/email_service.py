@@ -1,64 +1,60 @@
-"""Envio de correo SMTP para fallback SDD §3.2 / T-206."""
+"""Envio de correos via Resend HTTP API. SDD §3.2 / T-206."""
 
 import logging
-import smtplib
-from email.mime.text import MIMEText
+import os
+
+import resend
 
 from app.core.config import email_config
 
 logger = logging.getLogger(__name__)
 
+resend.api_key = email_config.resend_api_key or os.getenv("RESEND_API_KEY", "")
+
 
 def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
-    """
-    Envía un correo en texto plano usando SMTP si la configuración está completa.
+    """Envía un correo en texto plano via Resend HTTP API.
+
+    Args:
+        destino: email del destinatario
+        asunto: asunto del correo
+        cuerpo: cuerpo en texto plano (se envuelve en HTML minimal)
 
     Returns:
-        True si se envió, False si faltan variables o falló el envío.
+        True si Resend respondió OK, False en caso contrario.
     """
-    host = email_config.smtp_host
-    user = email_config.smtp_user
-    password = email_config.smtp_password
-    from_addr = email_config.smtp_from or user
-    logger.warning("SMTP_DIAG | host=%s user=%s from=%s port=%s destino=%s",
-                   bool(host), bool(user), bool(from_addr), email_config.smtp_port, destino)
-    if not host or not from_addr:
-        logger.warning("SMTP_FALTA_CONFIG | host=%s from=%s user=%s pass=%s",
-                       bool(host), bool(from_addr), bool(user), bool(password))
+    if not resend.api_key:
+        logger.error("RESEND_MISSING_API_KEY")
         return False
 
-    msg = MIMEText(cuerpo, "plain", "utf-8")
-    msg["Subject"] = asunto
-    msg["From"] = from_addr
-    msg["To"] = destino
+    from_addr = email_config.resend_from
+
+    # Envolver texto plano en HTML minimal para Resend (requiere html)
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; white-space: pre-wrap;">
+{cuerpo}
+</body>
+</html>"""
+
+    logger.warning("RESEND_SEND_START | destino=%s asunto=%s", destino, asunto)
 
     try:
-        if email_config.smtp_port == 465:
-            with smtplib.SMTP_SSL(host, email_config.smtp_port, timeout=30) as smtp:
-                if user and password:
-                    smtp.login(user, password)
-                smtp.sendmail(from_addr, [destino], msg.as_string())
-        else:
-            with smtplib.SMTP(host, email_config.smtp_port, timeout=30) as smtp:
-                smtp.ehlo()
-                if email_config.smtp_port == 587:
-                    smtp.starttls()
-                    smtp.ehlo()
-                if user and password:
-                    smtp.login(user, password)
-                smtp.sendmail(from_addr, [destino], msg.as_string())
-        logger.warning("SMTP_ENVIO_OK | destino=%s", destino)
+        response = resend.Emails.send({
+            "from": from_addr,
+            "to": destino,
+            "subject": asunto,
+            "html": html,
+        })
+        logger.warning("RESEND_SEND_OK | destino=%s response_id=%s", destino, response.get("id", "?"))
         return True
-    except Exception as e:
-        smtp_code = getattr(e, 'smtp_code', None)
-        smtp_error = getattr(e, 'smtp_error', None)
-        logger.exception("SMTP_SEND_ERROR | destino=%s host=%s port=%s smtp_code=%s smtp_error=%s",
-                         destino, host, email_config.smtp_port, smtp_code, smtp_error)
+    except Exception:
+        logger.exception("RESEND_SEND_ERROR | destino=%s", destino)
         return False
 
 
 def enviar_reset_password(destino: str, reset_url: str) -> bool:
-    """Envía correo de recuperación de contraseña.
+    """Envía correo de recuperación de contraseña via Resend.
 
     Args:
         destino: email del SuperAdmin
@@ -86,4 +82,3 @@ Si no solicitaste este cambio, ignora este mensaje. El enlace expirará automát
     else:
         logger.error("PASSWORD_RESET_EMAIL_FAILED | destino=%s", destino)
     return resultado
-
