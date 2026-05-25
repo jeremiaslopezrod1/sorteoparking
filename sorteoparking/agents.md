@@ -1,40 +1,24 @@
 # SorteoParking — Reglas del Agente (agents.md)
 
-## Sistema de Diseño — Apple (aplicado)
-
-El proyecto usa **Apple Design System** generado con `npx getdesign@latest add apple`.
-El archivo `DESIGN.md` (raíz del proyecto) es la fuente de verdad del frontend.
-
-**Principios Apple aplicados (DESIGN.md):**
-- Action Blue `#0066cc` como único color interactivo
-- Botones pill (border-radius: 9999px)
-- Tipografía system-ui / SF Pro Text a 17px body
-- Sin sombras decorativas en UI — solo en renders de producto
-- Alternancia de tiles claros y oscuros como divisor de secciones
-- Nav oscuro tipo Apple (44px, #000)
-- Tarjetas con border-radius: 18px
-- Transform: scale(0.95) como micro-interacción de presión
-
-**Frontend actualizado:**
-- `frontend/superadmin.html` — login con Apple design
-- `frontend/dashboard.html` — panel completo con onboarding, catálogo y flujo de sorteo
-- `frontend/otp_panel.html` — confirmación OTP con vista éxito animada
-- `frontend/publico.html` — vista pública de resultados con seed y búsqueda
-
 ## Identidad del proyecto
 
 Eres el asistente de desarrollo de **SorteoParking**, un servicio web multi-tenant
 en Cloud para ejecutar sorteos digitales de parqueaderos en conjuntos VIS de Colombia.
-La especificación completa está en `SDD_SorteoParking_Servicio_v1.6.md`.
+La especificación completa está en `SDD_v2.1_SorteoParking.md`.
 Ese documento es la única fuente de verdad. Si algo no está en el SDD, no lo implementes
 — pregunta primero.
+
+El diseño frontend sigue el **Apple Design System** definido en [`DESIGN.md`](DESIGN.md).
+Todos los paneles HTML deben alinearse con: Action Blue #0066cc, botones pill,
+SF Pro Text (system-ui), tarjetas 18px border-radius, nav oscuro 44px, diseño responsivo
+mobile-first con breakpoints Apple.
 
 ---
 
 ## Regla de oro
 
 > **Ningún componente se implementa sin que el SDD lo especifique.**
-> Si el SDD no lo menciona, la respuesta es: "Eso está fuera del alcance de v1.6, ¿lo agregamos al SDD primero?"
+> Si el SDD no lo menciona, la respuesta es: "Eso está fuera del alcance de v2.1, ¿lo agregamos al SDD primero?"
 
 ---
 
@@ -43,13 +27,15 @@ Ese documento es la única fuente de verdad. Si algo no está en el SDD, no lo i
 | Capa | Tecnología | Restricción |
 |---|---|---|
 | Backend | Python 3.11+ · FastAPI | Sin Django, sin Flask |
-| Base de datos | SQLite · WAL mode · SQLAlchemy ORM | Sin PostgreSQL en v1.6 |
-| OTP | Python · SHA-256 · pepper | Sin librerías OTP externas |
-| WhatsApp | WhatsApp Business API (Meta) | Sin Twilio en v1.6 |
-| Frontend | HTML · CSS · JS vanilla | Sin React, sin Vue, sin frameworks |
-| Hosting | Railway o Render | Sin Docker en v1.6 |
+| Base de datos | PostgreSQL (Render) · SQLAlchemy ORM | SQLite solo como fallback local |
+| OTP | Python · SHA-256 con pepper | Sin librerías OTP externas |
+| 2FA SUPER_ADMIN | TOTP RFC 6238 | pyotp o equivalente |
+| Correo | Resend HTTP API | Sin SMTP, sin Twilio, sin SendGrid |
+| Parser IA | DeepSeek Flash (`deepseek-chat`) | Sin OpenAI, sin Gemini |
+| Frontend | HTML · CSS · JS vanilla | Sin React, sin Vue, sin frameworks, sin Bootstrap |
+| Diseño frontend | Apple Design System | Ver `DESIGN.md` |
+| Hosting | Render | Sin Docker en v2.1 |
 | IDE | Cursor | — |
-| Parser IA | DeepSeek Flash (`deepseek-chat`) | Análisis semántico de estructura Excel |
 
 ---
 
@@ -67,7 +53,6 @@ sorteoparking/
 │   │   ├── scheduler.py
 │   │   └── slug.py
 │   ├── models/
-│   │   ├── __init__.py
 │   │   ├── tenant.py
 │   │   ├── catalogo.py
 │   │   ├── sorteo.py
@@ -84,7 +69,6 @@ sorteoparking/
 │   │   ├── sorteos_service.py
 │   │   ├── catalogo_service.py
 │   │   ├── otp_service.py
-│   │   ├── whatsapp.py
 │   │   ├── email_service.py
 │   │   ├── log_service.py
 │   │   ├── excel_parser.py
@@ -96,12 +80,16 @@ sorteoparking/
 │   └── db/
 │       └── database.py
 ├── frontend/
+│   ├── index.html ← NUEVO v2.1 (Apple Design System)
 │   ├── dashboard.html
 │   ├── otp_panel.html
 │   ├── publico.html
 │   └── superadmin.html
+├── DESIGN.md ← Apple Design System
+├── apple/DESIGN.md
 ├── agents.md
-├── SDD_SorteoParking_Servicio_v1.6.md
+├── SDD_v2.1_SorteoParking.md
+├── SDD_SorteoParking_Servicio_v1.7.md
 ├── requirements.txt
 └── README.md
 ```
@@ -112,8 +100,8 @@ No crear carpetas ni archivos fuera de esta estructura sin actualizar el SDD pri
 
 ## Aislamiento multi-tenant — invariante crítica
 
-- **Toda tabla** tiene `tenant_id (FK → tenants.id) NOT NULL`.
-- **Todo endpoint** valida que el token pertenezca al mismo `tenant_id` de los recursos solicitados.
+- **Toda tabla** tiene `tenant_id UUID FK → tenants.id NOT NULL`.
+- **Todo endpoint** valida que el token pertenezca al mismo `tenant_id` de los recursos solicitados mediante `enforce_tenant_scope()`.
 - Un tenant nunca puede leer, escribir ni inferir datos de otro tenant.
 - Cualquier query que no filtre por `tenant_id` es un bug — trátalo como error crítico.
 - Respuesta ante violación: HTTP 403, nunca 404.
@@ -122,32 +110,46 @@ No crear carpetas ni archivos fuera de esta estructura sin actualizar el SDD pri
 
 ## Protocolo OTP — invariantes no negociables
 
-- Los 5 OTPs deben confirmarse antes de ejecutar el sorteo. Sin excepciones, sin bypass.
+- El número de OTPs requeridos es `sorteo.num_garantes` (configurable, rango 3–10). No hay valor hardcoded.
+- Todos los OTPs deben confirmarse antes de ejecutar el sorteo. Sin excepciones, sin bypass.
 - El snapshot de participantes se fija antes de la confirmación del primer OTP.
 - Regenerar un OTP expirado no invalida los OTPs ya confirmados.
 - El seed se deriva de `SHA-256(timestamp_utc + hash_snapshot)` — nunca de `random()` directo.
 - El log registra timestamp exacto de cada confirmación — aparece en el acta.
 - Expiración OTP: 30 minutos desde generación.
-- Anti-replay: `with_for_update()` obligatorio en confirmación (T-118).
-- Límite de 3 intentos por OTP (SDD §6.4).
-- Máximo 5 OTPs simultáneos por sorteo.
+- El término correcto en toda la interfaz y el código es **garante**, no "consejero".
 
 ---
 
-## Mutex de ejecución (T-120)
+## Política de acceso a paneles HTML — invariante de seguridad
 
-- `LISTO → EJECUTANDO` mediante `update().where(estado="LISTO").values(estado="EJECUTANDO")`.
-- Si el update no afecta filas → HTTP 409 (ya se está ejecutando).
-- Error del motor → restaurar a LISTO.
-- Error interno → marcar ERROR y loguear.
+| Panel | Acceso permitido | Comportamiento sin credencial |
+|---|---|---|
+| `index.html` | Público | — |
+| `publico.html` | Público | — |
+| `otp_panel.html` | Solo con `token_enlace` válido en URL | Redirect a `index.html` |
+| `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
+| `superadmin.html` | Solo con sesión SUPER_ADMIN activa | HTTP 401 |
+
+El servidor valida autenticación **antes** de servir el HTML. No es suficiente validar solo en las llamadas a la API.
 
 ---
 
-## Validación snapshot (SDD §6.5)
+## Apple Design System — guías de frontend
 
-- Antes de ejecutar, recalcular hash de participantes actuales.
-- Comparar con `sorteo.snapshot_hash`.
-- Si difieren → HTTP 422 (integridad comprometida).
+El diseño frontend está definido en [`DESIGN.md`](DESIGN.md). Las reglas clave:
+
+- **Action Blue** (#0066cc) como único color interactivo — links, botones, CTAs
+- **Botones pill** con `border-radius: 9999px`
+- **Sin sombras decorativas** — solo la sombra de producto fotográfico
+- **Sin gradientes decorativos** — la atmósfera viene de la fotografía
+- **SF Pro Text** como familia tipográfica (`system-ui, -apple-system, sans-serif`)
+- **Body copy a 17px** (no 16px)
+- **Headlines weight 600** (no 700), con negative letter-spacing
+- **Nav oscuro** de 44px de alto
+- **Tarjetas** con 18px `border-radius`
+- **Responsivo mobile-first** con breakpoints Apple: ≤640px, 641–833px, 834–1068px, ≥1069px
+- **Sin frameworks CSS** — solo CSS vanilla
 
 ---
 
@@ -160,39 +162,44 @@ No crear carpetas ni archivos fuera de esta estructura sin actualizar el SDD pri
 - Sin queries SQL crudas — usar SQLAlchemy ORM siempre.
 - Variables y funciones en `snake_case`. Clases en `PascalCase`.
 - Constantes en `UPPER_SNAKE_CASE` en `core/config.py`.
-- `datetime.now(timezone.utc)` — nunca `datetime.utcnow()` (SDD §L-03).
+- Usar `datetime.now(timezone.utc)` — nunca `datetime.now()` ni `datetime.utcnow()` (deprecado en Python 3.12+).
+
+### Auditoría — patrón obligatorio
+
+```python
+# Siempre en este orden: datos primero, log después, commit explícito en cada paso
+db.commit()  # Persiste datos del negocio
+registrar_log_auditoria(db, ...)  # flush() interno, sin commit
+db.commit()  # Persiste el log
+```
+
+Omitir el segundo `db.commit()` es el bug de auditoría no persistente de v2.0. No repetirlo.
 
 ### Errores
 - Usar `HTTPException` de FastAPI con códigos correctos del SDD.
 - Loguear todo error en `LogAuditoria` con `tenant_id`.
 - Nunca exponer stack traces al cliente — solo en logs internos.
+- Errores 409 deben incluir mensaje accionable, no solo el código.
 
 ### Seguridad
 - Nunca loguear OTPs en texto plano.
-- Nunca incluir correos ni WhatsApp de participantes en el acta (CA-10).
-- Nunca incluir `documento` de participantes en vista pública (SDD §16.3).
-- Comparación de tokens siempre con `hmac.compare_digest()` — nunca con `==`.
-- Variables sensibles (API keys, secrets) solo en variables de entorno — nunca hardcodeadas.
+- Nunca incluir correos ni datos personales de participantes en el acta (CA-10).
+- Tokens de autenticación en headers, nunca en query params (excepción: `token_enlace` en OTP público, por diseño).
+- Variables sensibles solo en variables de entorno — nunca hardcodeadas.
+- Comparaciones de tokens y hashes siempre con `hmac.compare_digest()` — nunca con `==`.
+- El `SUPER_ADMIN_TOTP_SECRET` se almacena encriptado — nunca en texto plano.
 
 ---
 
 ## Flujo de trabajo por tarea
 
-Antes de escribir código para cualquier tarea del plan de 90 días:
+Antes de escribir código para cualquier tarea del plan de implementación:
 
-1. Leer la sección del SDD correspondiente a la tarea (columna "Spec ref.").
+1. Leer la sección del SDD correspondiente a la tarea (columna "CA" en §18).
 2. Identificar qué modelos, endpoints o servicios involucra.
 3. Implementar en este orden: modelo → servicio → router → frontend → test manual.
 4. Verificar el criterio de aceptación (CA-XX) correspondiente antes de marcar como lista.
-
----
-
-## Parser Inteligente (SDD §14)
-
-- **Fase 1**: DeepSeek Flash analiza estructura (nombres de columna + 5 filas de muestra).
-- **Sanitización estructural obligatoria**: cada celda se reemplaza por su tipo (`[TEXTO]`, `[NUMERO]`, etc.) antes de enviar a IA. Ley 1581/2012.
-- **Fase 2**: Python lee TODOS los datos usando el mapa de columnas. Sin IA.
-- Fallback a sinónimos si DeepSeek no está disponible o confianza < 0.80.
+5. Actualizar el estado de la tarea en el SDD (⬜ → ✅).
 
 ---
 
@@ -201,44 +208,15 @@ Antes de escribir código para cualquier tarea del plan de 90 días:
 - No instalar dependencias no listadas en `requirements.txt` sin consultar.
 - No crear endpoints que no estén en el SDD §5.
 - No modificar `sorteo_engine.py` sin explícita instrucción — es el núcleo heredado del v1.4.3.
-- No usar `datetime.utcnow()` — siempre `datetime.now(timezone.utc)` para consistencia en Cloud.
+- No usar `datetime.utcnow()` — usar `datetime.now(timezone.utc)`.
 - No hardcodear NIT, nombre de conjunto, ni ningún dato de tenant.
+- No hardcodear el número de garantes — siempre usar `sorteo.num_garantes`.
 - No saltarse el protocolo OTP aunque "sea para pruebas".
-- No exponer `documento`, `whatsapp` ni `email` de participantes en vistas públicas o actas.
-
----
-
-## Endpoints verificados contra SDD v1.6
-
-| SDD § | Endpoint | Estado |
-|---|---|---|
-| §5.1 | POST /admin/tenants | ✅ |
-| §5.1 | GET /admin/tenants | ✅ |
-| §5.1 | PATCH /admin/tenants/{id} | ✅ |
-| §5.1 | PATCH /admin/tenants/{id}/estado | ✅ |
-| §5.1 | GET /admin/metricas | ✅ |
-| §5.1 | POST /admin/backup | ✅ |
-| §5.2 | POST /catalogo/carga-csv | ✅ (con parser inteligente) |
-| §5.2 | GET /catalogo/plantilla | ✅ |
-| §5.2 | GET /catalogo/zonas | ✅ |
-| §5.2 | GET /catalogo/parqueaderos | ✅ |
-| §5.2 | PATCH /catalogo/parqueaderos/{num} | ✅ |
-| §5.3 | POST /sorteos/carga-excel | ✅ |
-| §5.3 | POST /sorteos/iniciar | ✅ (con verificación de catálogo) |
-| §5.3 | POST /sorteos/{id}/otp/confirmar | ✅ (with_for_update, 3 intentos) |
-| §5.3 | GET /sorteos/{id}/otp/estado | ✅ |
-| §5.3 | GET /sorteos/{id}/estado | ✅ |
-| §5.3 | GET /sorteos/{id}/diagnostico | ✅ |
-| §5.3 | POST /sorteos/{id}/ejecutar | ✅ (mutex EJECUTANDO + snapshot validation) |
-| §5.3 | GET /sorteos/{id}/resultados | ✅ |
-| §5.3 | POST /sorteos/{id}/exportar | ✅ (Excel + Word) |
-| §5.3 | POST /sorteos/{id}/notificar | ✅ |
-| §5.3 | GET /sorteos/historial | ✅ |
-| §5.4 | GET /p/{slug}/sorteos/{id} | ✅ (sin documento) |
-| §5.4 | GET /p/{slug}/sorteos/{id}/seed | ✅ |
-| §13 | POST /auth/login/superadmin | ✅ (Argon2id, CSRF, rate limit) |
-| §18 | Backup automático | ✅ (diario + integrity_check) |
-| §19 | Security Headers | ✅ (CSP, HSTS, XFO) |
+- No usar la palabra "consejero" — el término correcto es "garante".
+- No servir paneles HTML protegidos sin validar autenticación server-side.
+- No eliminar un tenant con sorteos en estado `COMPLETADO` — retornar 409.
+- No usar frameworks CSS ni JavaScript — el frontend es vanilla con Apple Design System.
+- No agregar sombras ni gradientes decorativos al frontend (ver `DESIGN.md`).
 
 ---
 
@@ -249,14 +227,16 @@ Antes de escribir código para cualquier tarea del plan de 90 días:
 | Tenant | Un conjunto residencial cliente del servicio |
 | TENANT_ADMIN | El administrador del conjunto — usuario principal |
 | SUPER_ADMIN | El equipo de SorteoParking — acceso global |
-| Consejero | Uno de los 5 garantes del sorteo — confirma OTP |
+| Garante | Uno de los N garantes del sorteo — confirma OTP (antes: "consejero") |
 | Elegible | Residente que cumple requisitos para participar |
 | Seed | Valor público reproducible que garantiza la aleatoriedad |
 | Snapshot | Foto fija de los elegibles al momento de iniciar el sorteo |
-| Acta | Documento Excel/Word firmado digitalmente con resultados |
+| Acta | Documento Excel/Word con resultados y log de auditoría |
 | Log encadenado | Registro append-only donde cada entrada referencia el hash de la anterior |
-| Parser IA | Análisis semántico de estructura Excel con DeepSeek Flash |
+| num_garantes | Número de garantes requeridos para un sorteo (rango 3–10, por defecto 5) |
+| token_enlace | UUID opaco de 43 chars que autentica a un garante en el panel OTP |
+| Cold start | Hibernación de Render Free tras inactividad — mitigado con ping externo |
 
 ---
 
-*Última actualización: Mayo 2026 — sincronizado con SDD v1.6*
+*Última actualización: Mayo 2026 — sincronizado con SDD v2.1. Diseño frontend: [Apple Design System](DESIGN.md).*

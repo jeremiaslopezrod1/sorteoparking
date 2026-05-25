@@ -3,7 +3,9 @@
 Sistema multi-tenant de asignación de parqueaderos residenciales con validación distribuida vía OTP, seed reproducible y exportación verificable.
 
 **URL producción:** `https://sorteoparking.onrender.com`  
-**Documento de diseño:** [`SDD_v2_SorteoParking.md`](SDD_v2_SorteoParking.md)
+**Documento de diseño:** [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md)
+**Reglas del agente:** [`agents.md`](agents.md)
+**Diseño frontend:** [`DESIGN.md`](DESIGN.md)
 
 ---
 
@@ -11,10 +13,12 @@ Sistema multi-tenant de asignación de parqueaderos residenciales con validació
 
 | Documento | Descripción |
 |---|---|
-| [`SDD_v2_SorteoParking.md`](SDD_v2_SorteoParking.md) | Especificación completa del sistema actual en producción |
+| [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) | Especificación completa del sistema actual en producción |
+| [`agents.md`](agents.md) | Reglas del agente de desarrollo |
+| [`DESIGN.md`](DESIGN.md) | Apple Design System para frontend |
 | `SDD_SorteoParking_Servicio_v1.7.md` | Versión archivada del diseño original |
 
-El `SDD_v2_SorteoParking.md` es el documento maestro. Contiene: arquitectura, contratos API, flujo OTP, modelo de datos, auditoría, seguridad, despliegue y plan de implementación con estado de todas las tareas T-xxx.
+El `SDD_v2.1_SorteoParking.md` es el documento maestro. Contiene: arquitectura, contratos API, flujo OTP, modelo de datos, auditoría, seguridad, despliegue y plan de implementación con estado de todas las tareas T-xxx.
 
 ---
 
@@ -100,7 +104,7 @@ sorteoparking/
 
 ⭐ Endpoints públicos (sin Bearer token)
 
-Ver el [`SDD_v2_SorteoParking.md`](SDD_v2_SorteoParking.md) para la especificación completa de todos los endpoints.
+Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especificación completa de todos los endpoints.
 
 ---
 
@@ -119,13 +123,9 @@ Ver el [`SDD_v2_SorteoParking.md`](SDD_v2_SorteoParking.md) para la especificaci
 
 ## Estado del proyecto
 
-**26/30 tareas completadas.** Las 4 pendientes corresponden a:
+**26/30 tareas de v2.0 completadas + 20 nuevas tareas en v2.1 (en desarrollo).**
 
-- `T-303` — Panel de métricas SUPER_ADMIN
-- `T-304` — Flujo de pago previo al evento
-- `T-305` — Primer cliente externo
-
-Ver [`SDD_v2_SorteoParking.md §18`](SDD_v2_SorteoParking.md) para el detalle completo de todas las tareas.
+Ver [`SDD_v2.1_SorteoParking.md §18`](SDD_v2.1_SorteoParking.md) para el detalle completo de todas las tareas.
 
 ---
 
@@ -156,4 +156,4 @@ SUPER_ADMIN_TOKEN=<generado por create_superadmin --env-only>
 
 ---
 
-*Última actualización: Mayo 2026 — Documento alineado con [`SDD_v2_SorteoParking.md`](SDD_v2_SorteoParking.md).*
+*Última actualización: Mayo 2026 — Documento alineado con [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) y [`DESIGN.md`](DESIGN.md).*
