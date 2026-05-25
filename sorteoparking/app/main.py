@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.security import get_auth_context
+from app.core.security import get_auth_context, get_super_admin_from_cookie
 from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal, verificar_conexion_postgresql
 from app.routers import admin, auth, catalogo as catalogo_router, debug, publico, sorteos
+from app.routers.auth import superadmin_reset_router
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -162,7 +163,7 @@ async def startup() -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.1", "db": "ok"}
 
 
 app.include_router(debug.router)
@@ -171,7 +172,34 @@ app.include_router(auth.router)
 app.include_router(catalogo_router.router)
 app.include_router(sorteos.router)
 app.include_router(publico.router)
+app.include_router(superadmin_reset_router)
+
+# ── T-314: Endpoints protegidos para paneles HTML ────────────────────────
+# Estos endpoints capturan las rutas /static/*.html antes del StaticFiles mount.
+# El StaticFiles sigue sirviendo CSS, JS, imagenes e index.html/publico.html.
 
 _frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+
+
+@app.get("/static/dashboard.html")
+async def serve_dashboard(request: Request):
+    """Sirve dashboard.html solo si el request tiene Bearer token valido."""
+    auth_ctx = get_auth_context(request)
+    if not auth_ctx.tenant_id:
+        return Response(status_code=401, content="No autorizado")
+    return FileResponse(path=_frontend_dir / "dashboard.html")
+
+
+@app.get("/static/superadmin.html")
+async def serve_superadmin(request: Request):
+    """Sirve superadmin.html solo si hay cookie admin_session valida."""
+    try:
+        get_super_admin_from_cookie(request)
+        return FileResponse(path=_frontend_dir / "superadmin.html")
+    except HTTPException:
+        return Response(status_code=401, content="No autorizado")
+
+
 if _frontend_dir.is_dir():
+    # StaticFiles sirve el resto: CSS, JS, imagenes, index.html, publico.html, otp_panel.html
     app.mount("/static", StaticFiles(directory=str(_frontend_dir)), name="static")

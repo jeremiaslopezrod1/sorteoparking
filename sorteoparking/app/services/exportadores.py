@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.catalogo import Zona
 from app.models.sorteo import (
-    Consejero,
+    Garante,
     Participante,
     ResultadoSorteo,
     SesionOTP,
@@ -178,25 +178,25 @@ def exportar_acta_excel(db: Session, tenant_id: str, sorteo_id: int) -> bytes:
     for col in range(1, len(headers3) + 1):
         ws3.column_dimensions[get_column_letter(col)].width = 20
 
-    # ---- Hoja 4: Consejeros ----
-    ws4 = wb.create_sheet("Consejeros")
+    # ---- Hoja 4: Garantes ----
+    ws4 = wb.create_sheet("Garantes")
     headers4 = ["Nombre", "Email", "Estado OTP", "Confirmado en"]
     for col, h in enumerate(headers4, start=1):
         cell = ws4.cell(row=1, column=col, value=_sanitizar(h))
         for k, v in _estilo_encabezado().items():
             setattr(cell, k, v)
 
-    consejeros = (
-        db.query(SesionOTP, Consejero)
-        .join(Consejero, SesionOTP.consejero_id == Consejero.id)
+    garantes = (
+        db.query(SesionOTP, Garante)
+        .join(Garante, SesionOTP.garante_id == Garante.id)
         .filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id)
-        .order_by(Consejero.id)
+        .order_by(Garante.id)
         .all()
     )
-    for i, (ses, cons) in enumerate(consejeros, start=2):
-        ws4.cell(row=i, column=1, value=_sanitizar(cons.nombre))
-        # Los consejeros aparecen con sus datos según SDD §16.2
-        ws4.cell(row=i, column=2, value=_sanitizar(cons.email))
+    for i, (ses, gar) in enumerate(garantes, start=2):
+        ws4.cell(row=i, column=1, value=_sanitizar(gar.nombre))
+        # Los garantes aparecen con sus datos según SDD §16.2
+        ws4.cell(row=i, column=2, value=_sanitizar(gar.email))
         ws4.cell(row=i, column=3, value=_sanitizar(ses.estado))
         ts = ses.confirmado_en.strftime("%Y-%m-%d %H:%M:%S UTC") if ses.confirmado_en else ""
         ws4.cell(row=i, column=4, value=ts)
@@ -278,24 +278,24 @@ def exportar_acta_word(db: Session, tenant_id: str, sorteo_id: int) -> bytes:
         run_k.bold = True
         p.add_run(_sanitizar(v))
 
-    # Consejeros
+    # Garantes
     doc.add_paragraph("")
     p = doc.add_paragraph()
-    run = p.add_run("Consejeros garantes")
+    run = p.add_run("Garantes")
     run.bold = True
     run.font.size = Pt(14)
     run.font.color.rgb = RGBColor(0x1A, 0x3A, 0x5C)
 
-    consejeros = (
-        db.query(SesionOTP, Consejero)
-        .join(Consejero, SesionOTP.consejero_id == Consejero.id)
+    garantes = (
+        db.query(SesionOTP, Garante)
+        .join(Garante, SesionOTP.garante_id == Garante.id)
         .filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id)
-        .order_by(Consejero.id)
+        .order_by(Garante.id)
         .all()
     )
-    for ses, cons in consejeros:
+    for ses, gar in garantes:
         ts = ses.confirmado_en.strftime("%Y-%m-%d %H:%M:%S UTC") if ses.confirmado_en else "Pendiente"
-        doc.add_paragraph(f"• {_sanitizar(cons.nombre)} — OTP: {ses.estado} — {ts}", style="List Bullet")
+        doc.add_paragraph(f"• {_sanitizar(gar.nombre)} — OTP: {ses.estado} — {ts}", style="List Bullet")
 
     # Resultados
     doc.add_paragraph("")

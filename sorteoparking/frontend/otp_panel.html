@@ -60,6 +60,59 @@
       color: rgba(255,255,255,0.45);
       margin-bottom: 32px;
     }
+
+  /* ── Responsive Design (Apple Breakpoints) ── */
+  * { box-sizing: border-box; }
+  img { max-width: 100%; height: auto; }
+
+  /* Tables responsive */
+  @media (max-width: 640px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    thead tr { position: absolute; top: -9999px; left: -9999px; }
+    td {
+      border: none; position: relative;
+      padding-left: 50%; min-height: 40px;
+    }
+    td:before {
+      position: absolute; top: 6px; left: 6px;
+      width: 45%; padding-right: 10px;
+      white-space: nowrap; font-weight: 600;
+      content: attr(data-label);
+    }
+  }
+
+  /* Cards grid — otp-cards breakpoints */
+  @media (max-width: 833px) {
+    .cards-grid, .otp-cards, .grid, .tenant-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (min-width: 834px) and (max-width: 1068px) {
+    .cards-grid, .otp-cards, .grid, .tenant-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+    }
+  }
+
+  /* Mobile container */
+  @media (max-width: 640px) {
+    body { padding: 0 12px; }
+    .otp-container, .container, main { padding: 0 12px; }
+    h1 { font-size: 24px !important; }
+    h2 { font-size: 18px !important; }
+    .otp-digit { width: 36px !important; height: 44px !important; font-size: 18px !important; }
+    .otp-input-group { gap: 4px !important; }
+  }
+
+  /* Navigation */
+  @media (max-width: 833px) {
+    nav, .global-nav {
+      flex-wrap: wrap; height: auto !important;
+      padding: 8px 12px !important;
+      gap: 4px;
+    }
+    .nav-links { display: none; }
+  }
   </style>
 </head>
 <body class="otp-body">

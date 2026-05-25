@@ -73,7 +73,7 @@ class SorteoResumenOut(BaseModel):
 
 
 
-class ConsejeroIn(BaseModel):
+class GaranteIn(BaseModel):
 
     nombre: str
 
@@ -87,7 +87,9 @@ class IniciarSorteoIn(BaseModel):
 
     sorteo_id: int
 
-    consejeros: list[ConsejeroIn] = Field(..., min_length=5, max_length=5)
+    num_garantes: int = Field(default=5, ge=3, le=10)
+
+    garantes: list[GaranteIn] = Field(..., min_length=3, max_length=10)
 
 
 
@@ -203,7 +205,7 @@ def iniciar(
 
     tenant_id = request.state.tenant_id
 
-    consejeros = [c.model_dump() for c in payload.consejeros]
+    garantes = [g.model_dump() for g in payload.garantes]
 
     return iniciar_sorteo(
 
@@ -213,7 +215,9 @@ def iniciar(
 
         sorteo_id=payload.sorteo_id,
 
-        consejeros=consejeros,
+        num_garantes=payload.num_garantes,
+
+        garantes=garantes,
 
     )
 

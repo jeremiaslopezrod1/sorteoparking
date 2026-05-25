@@ -65,6 +65,91 @@
     }
     .otp-dot.confirmed { background: var(--green); color: #fff; }
 
+    /* ── T-303: Spinner & Result Fade-in ── */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--hairline);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .result-fade-in {
+      opacity: 0;
+      animation: fadeInResult 0.5s ease-in forwards;
+    }
+    @keyframes fadeInResult {
+      to { opacity: 1; }
+    }
+
+    .results-hero {
+      position: sticky;
+      top: 60px;
+      z-index: 50;
+      background: var(--canvas);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+      display: none;
+    }
+    .results-hero.visible {
+      display: block;
+    }
+    .results-hero h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--ink-success);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .results-hero .result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--divider);
+      font-size: 14px;
+    }
+    .results-hero .result-item:last-child {
+      border-bottom: none;
+    }
+    .results-hero .result-item .apto {
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .results-hero .result-item .asignado {
+      color: var(--ink-success);
+      font-weight: 500;
+    }
+    .results-hero .result-item .no-asignado {
+      color: var(--ink-tertiary);
+    }
+    .results-hero .result-summary {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    .results-hero .result-summary span {
+      font-weight: 500;
+    }
+    .results-hero .result-summary .ganadores {
+      color: var(--ink-success);
+    }
+    .results-hero .result-summary .no-asignados-val {
+      color: var(--ink-tertiary);
+    }
+
     .step-hint {
       font-size: 14px;
       color: var(--ink-secondary);
@@ -97,20 +182,73 @@
       height: 1px;
       background: var(--divider);
     }
+
+  /* ── Responsive Design (Apple Breakpoints) ── */
+  * { box-sizing: border-box; }
+  img { max-width: 100%; height: auto; }
+
+  /* Tables responsive */
+  @media (max-width: 640px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    thead tr { position: absolute; top: -9999px; left: -9999px; }
+    td {
+      border: none; position: relative;
+      padding-left: 50%; min-height: 40px;
+    }
+    td:before {
+      position: absolute; top: 6px; left: 6px;
+      width: 45%; padding-right: 10px;
+      white-space: nowrap; font-weight: 600;
+      content: attr(data-label);
+    }
+  }
+
+  /* Cards grid */
+  @media (max-width: 833px) {
+    .cards-grid, .otp-cards, .grid, .tenant-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (min-width: 834px) and (max-width: 1068px) {
+    .cards-grid, .otp-cards, .grid, .tenant-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+    }
+  }
+
+  /* Mobile container */
+  @media (max-width: 640px) {
+    body { padding: 0 12px; }
+    .otp-container, .container, main { padding: 0 12px; }
+    h1 { font-size: 24px !important; }
+    h2 { font-size: 18px !important; }
+    .otp-digit { width: 36px !important; height: 44px !important; font-size: 18px !important; }
+    .otp-input-group { gap: 4px !important; }
+  }
+
+  /* Navigation */
+  @media (max-width: 833px) {
+    nav, .global-nav {
+      flex-wrap: wrap; height: auto !important;
+      padding: 8px 12px !important;
+      gap: 4px;
+    }
+    .nav-links { display: none; }
+  }
   </style>
 </head>
 <body>
   <!-- Apple Nav Bar -->
   <nav class="nav" role="navigation" aria-label="Navegación principal">
-    <div class="nav-brand">
+    <a href="/static/index.html" class="nav-brand" style="text-decoration:none;color:inherit;">
       <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="4" width="14" height="10" rx="2"/>
         <path d="M6 8h6M6 11h4"/>
       </svg>
       SorteoParking
-    </div>
+    </a>
     <div class="nav-actions">
-      <a href="/static/superadmin.html" class="nav-link" aria-label="Panel super admin">Admin</a>
+      <a href="/static/superadmin.html" class="nav-link" aria-label="Volver al panel super admin">Volver</a>
       <button id="logout-btn" class="nav-link" aria-label="Cerrar sesión">Salir</button>
     </div>
   </nav>
@@ -200,7 +338,22 @@
         <button type="button" id="st-ejecutar" class="btn btn-primary btn-lg" disabled>Ejecutar sorteo</button>
         <button type="button" id="st-notificar" class="btn btn-secondary btn-lg" disabled>Notificar participantes</button>
         <button type="button" id="st-exportar" class="btn btn-secondary btn-lg" disabled>Exportar acta</button>
+        <!-- T-312 / T-303: Ver resultados publicos (aparece post-ejecucion) -->
+        <a id="st-ver-publicos" href="#" target="_blank" class="btn btn-secondary btn-lg" style="display:none;text-decoration:none;" rel="noopener">Ver resultados públicos</a>
       </div>
+
+      <!-- T-303: Results hero at top of viewport -->
+      <div id="results-hero" class="results-hero">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 10l3.5 3.5L18 4"/>
+          </svg>
+          Sorteo ejecutado exitosamente
+        </h2>
+        <div id="results-summary" class="result-summary"></div>
+        <div id="results-list-inline"></div>
+      </div>
+
       <div id="st-out" class="status-box" role="status">—</div>
     </section>
   </main>
@@ -215,11 +368,10 @@
       return null;
     }
 
-    // Auto-fill UUID from URL hash (#uuid=xxx)
+    // ── T-312: Auto-fill UUID from URL query param (?token=xxx) ──
     (function() {
-      const hash = window.location.hash.replace('#', '');
-      const params = new URLSearchParams(hash);
-      const uuid = params.get('uuid');
+      const params = new URLSearchParams(window.location.search);
+      const uuid = params.get('token');
       if (uuid) {
         document.getElementById('st-token').value = uuid;
         document.getElementById('cat-token').value = uuid;
@@ -256,6 +408,37 @@
           out.textContent = 'Catálogo cargado.\n' + JSON.stringify(data, null, 2);
           document.getElementById('st-token').value = token;
           showToast('Catálogo cargado exitosamente', 'success');
+        } else if (res.status === 409) {
+          out.innerHTML = '<p style="margin-bottom:12px"><strong>Este conjunto ya tiene un catálogo cargado.</strong></p>' +
+            '<div class="flex gap-3" style="flex-wrap:wrap">' +
+            '<button id="btn-ver-catalogo" class="btn btn-secondary btn-sm">Ver catálogo actual</button>' +
+            '<button id="btn-ir-sorteo" class="btn btn-primary btn-sm">Ir al sorteo</button>' +
+            '</div>';
+          document.getElementById('btn-ver-catalogo').addEventListener('click', async () => {
+            out.textContent = 'Cargando catálogo...';
+            try {
+              const r = await fetch('/catalogo/parqueaderos', { headers: { 'Authorization': 'Bearer ' + token } });
+              const d = await r.json();
+              if (r.ok) {
+                if (Array.isArray(d) && d.length > 0) {
+                  out.innerHTML = '<p style="margin-bottom:8px"><strong>Parqueaderos cargados: ' + d.length + '</strong></p>' +
+                    '<div style="max-height:300px;overflow-y:auto;font-size:13px">' +
+                    d.slice(0, 100).map(p => '<div style="padding:4px 0;border-bottom:1px solid var(--hairline-light)">' +
+                      '#' + p.numero + ' — ' + (p.tipo || 'N/D') + ' (Zona ' + (p.zona_id || '?') + ')' +
+                      '</div>').join('') +
+                    (d.length > 100 ? '<p style="margin-top:8px;color:var(--ink-tertiary)">Mostrando 100 de ' + d.length + '</p>' : '') +
+                    '</div>';
+                } else {
+                  out.textContent = 'Sin parqueaderos registrados.';
+                }
+              } else {
+                out.textContent = 'Error al obtener catálogo: HTTP ' + r.status;
+              }
+            } catch(e) { out.textContent = 'Error de red: ' + e.message; }
+          });
+          document.getElementById('btn-ir-sorteo').addEventListener('click', () => {
+            document.getElementById('st-token').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
         } else { out.textContent = 'Error HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2); }
       } catch(e) { out.textContent = 'Error de red: ' + e.message; }
     });
@@ -370,19 +553,67 @@
 
       document.getElementById('st-sorteo-id').addEventListener('input', startPollIfSid);
 
+      // ── T-303: Ejecutar sorteo con spinner y fade-in ──
       document.getElementById('st-ejecutar').addEventListener('click', async () => {
         const sid = parseInt(document.getElementById('st-sorteo-id').value, 10);
         const token = document.getElementById('st-token').value.trim();
         const out = document.getElementById('st-out');
-        out.textContent = 'Ejecutando sorteo...';
+        const btn = document.getElementById('st-ejecutar');
+        const resultsHero = document.getElementById('results-hero');
+        const verPublicos = document.getElementById('st-ver-publicos');
+
+        // Show spinner
+        btn.disabled = true;
+        out.innerHTML = '<span class="spinner"></span> Ejecutando sorteo...';
+
         try {
           const res = await fetch('/sorteos/' + sid + '/ejecutar', { method: 'POST', credentials: 'include',
             headers: { 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' } });
           const data = await res.json().catch(() => ({}));
           out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
-          if (res.ok) showToast('Sorteo ejecutado exitosamente', 'success');
+
+          if (res.ok) {
+            showToast('Sorteo ejecutado exitosamente', 'success');
+
+            // ── T-303: Render resultados con fade-in ──
+            const resultados = Array.isArray(data) ? data : [];
+            if (resultados.length > 0) {
+              const ganadores = resultados.filter(r => r.tipo_resultado === 'GANADOR');
+              const noAsignados = resultados.filter(r => r.tipo_resultado !== 'GANADOR');
+
+              document.getElementById('results-summary').innerHTML =
+                '<span class="ganadores">\u2713 Ganadores: ' + ganadores.length + '</span>' +
+                '<span class="no-asignados-val">\u2014 No asignados: ' + noAsignados.length + '</span>' +
+                '<span>Total: ' + resultados.length + '</span>';
+
+              document.getElementById('results-list-inline').innerHTML =
+                resultados.slice(0, 50).map(r =>
+                  '<div class="result-item">' +
+                    '<span class="apto">Apto ' + escHtml(r.apartamento || '?') + '</span>' +
+                    (r.tipo_resultado === 'GANADOR'
+                      ? '<span class="asignado">' + escHtml(r.parqueadero_asignado || r.zona_asignada || 'Asignado') + '</span>'
+                      : '<span class="no-asignado">No asignado (' + (r.tipo_resultado || 'SIN_CUPO') + ')</span>') +
+                  '</div>'
+                ).join('') +
+                (resultados.length > 50
+                  ? '<p style="text-align:center;margin-top:12px;font-size:13px;color:var(--ink-tertiary)">Mostrando 50 de ' + resultados.length + ' resultados</p>'
+                  : '');
+
+              resultsHero.classList.add('visible', 'result-fade-in');
+              resultsHero.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            // ── T-312: Show Ver resultados publicos ──
+            verPublicos.href = '/static/publico.html?sid=' + sid;
+            verPublicos.style.display = 'inline-flex';
+          }
+
+          btn.disabled = false;
           pollOtp();
-        } catch (e) { out.textContent = 'Error: ' + e.message; }
+        } catch (e) {
+          out.innerHTML = 'Error: ' + e.message;
+          btn.disabled = false;
+        }
       });
 
       document.getElementById('st-notificar').addEventListener('click', async () => {

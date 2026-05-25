@@ -622,26 +622,26 @@ CA-01 a CA-24 — todos marcados ✅. Ver SDD v2.0 para detalle.
 
 | # | Criterio | Estado |
 |---|---|---|
-| CA-25 | SUPER_ADMIN edita nombre/NIT/email/municipio/unidades | ⬜ |
-| CA-26 | SUPER_ADMIN elimina tenant sin sorteos completados | ⬜ |
-| CA-27 | SUPER_ADMIN no elimina tenant con sorteos completados (409) | ⬜ |
-| CA-28 | Vista pública muestra resultados correctamente | ⬜ |
+| CA-25 | SUPER_ADMIN edita nombre/NIT/email/municipio/unidades | ✅ |
+| CA-26 | SUPER_ADMIN elimina tenant sin sorteos completados | ✅ |
+| CA-27 | SUPER_ADMIN no elimina tenant con sorteos completados (409) | ✅ |
+| CA-28 | Vista pública muestra resultados correctamente | ✅ |
 | CA-29 | Todos los paneles responsivos (Apple Design System) | ⬜ |
-| CA-30 | 409 catálogo cargado presenta opciones de acción | ⬜ |
-| CA-31 | Número de garantes configurable 3–10 | ⬜ |
-| CA-32 | Interfaz usa "garantes" no "consejeros" | ⬜ |
-| CA-33 | Resultados con animación fade-in | ⬜ |
-| CA-34 | Correo de bienvenida al crear conjunto | ⬜ |
-| CA-35 | Dashboard navega a vista pública post-ejecución | ⬜ |
-| CA-36 | index.html (Apple Design System) | ⬜ |
-| CA-37 | SUPER_ADMIN recupera contraseña por correo | ⬜ |
-| CA-38 | Token de tenant rotable | ⬜ |
-| CA-39 | 2FA TOTP para SUPER_ADMIN en producción | ⬜ |
-| CA-40 | Audit trail de accesos SUPER_ADMIN | ⬜ |
-| CA-41 | dashboard.html sin Bearer → 401 | ⬜ |
-| CA-42 | superadmin.html sin sesión → 401 | ⬜ |
-| CA-43 | otp_panel.html sin token_enlace → redirect | ⬜ |
-| CA-44 | GET /health → 200 con estado DB | ⬜ |
+| CA-30 | 409 catálogo cargado presenta opciones de acción | ✅ |
+| CA-31 | Número de garantes configurable 3–10 | ✅ |
+| CA-32 | Interfaz usa "garantes" no "consejeros" | ✅ |
+| CA-33 | Resultados con animación fade-in | ✅ |
+| CA-34 | Correo de bienvenida al crear conjunto | ✅ |
+| CA-35 | Dashboard navega a vista pública post-ejecución | ✅ |
+| CA-36 | index.html (Apple Design System) | ✅ |
+| CA-37 | SUPER_ADMIN recupera contraseña por correo | ✅ |
+| CA-38 | Token de tenant rotable | ✅ |
+| CA-39 | 2FA TOTP para SUPER_ADMIN en producción | ✅ |
+| CA-40 | Audit trail de accesos SUPER_ADMIN | ✅ |
+| CA-41 | dashboard.html sin Bearer → 401 | ✅ |
+| CA-42 | superadmin.html sin sesión → 401 | ✅ |
+| CA-43 | otp_panel.html sin token_enlace → redirect | ✅ |
+| CA-44 | GET /health → 200 con estado DB | ✅ |
 
 ---
 
@@ -701,8 +701,8 @@ T-101 a T-122 y T-201 a T-211 (✅). Ver SDD v2.0.
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
 | T-318 | Health check /health | CA-44 | ⬜ |
-| T-319 | Ping externo anti-cold-start | — | ⬜ |
-| T-320 | Dominio sorteoparking.co + SSL | — | ⬜ |
+| T-319 | Ping externo anti-cold-start (configurar UptimeRobot a GET /health cada 10 min) | — | ✅ |
+| T-320 | Dominio sorteoparking.co + SSL (pendiente registro de dominio) | — | 📝 |
 
 ---
 

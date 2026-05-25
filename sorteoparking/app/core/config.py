@@ -75,6 +75,7 @@ class SuperAdminConfig(BaseModel):
     super_admin_user: str = os.getenv("SUPER_ADMIN_USER", "admin")
     super_admin_password_hash: str | None = os.getenv("SUPER_ADMIN_PASSWORD_HASH")
     super_admin_email: str = os.getenv("SUPER_ADMIN_EMAIL", "pruebaalisocajica@gmail.com")
+    super_admin_totp_secret: str | None = os.getenv("SUPER_ADMIN_TOTP_SECRET") or None
 
 
 otp_config = OtpConfig()

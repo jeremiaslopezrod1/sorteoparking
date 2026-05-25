@@ -15,6 +15,7 @@ class Sorteo(Base):
     tipo = Column(Text, nullable=True) # CARRO / MOTO
     modelo_aplicado = Column(Text, nullable=True) # HIBRIDO / MANUAL
     snapshot_hash = Column(Text, nullable=True)
+    num_garantes = Column(Integer, nullable=False, default=5)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
@@ -29,6 +30,16 @@ class Participante(Base):
     apartamento = Column(Text, nullable=True)
     es_hatchback = Column(Boolean, default=False)
     tipo_vehiculo = Column(Text, nullable=False, default="CARRO") # CARRO / MOTO
+    email = Column(Text, nullable=True)
+
+
+class Garante(Base):
+    __tablename__ = "garantes"
+
+    tenant_id = Column(Text, ForeignKey("tenants.id"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sorteo_id = Column(Integer, ForeignKey("sorteos.id"), nullable=True, index=True)
+    nombre = Column(Text, nullable=False)
     email = Column(Text, nullable=True)
 
 
@@ -48,7 +59,7 @@ class SesionOTP(Base):
     tenant_id = Column(Text, ForeignKey("tenants.id"), nullable=False, index=True)
     id = Column(Integer, primary_key=True, autoincrement=True)
     sorteo_id = Column(Integer, ForeignKey("sorteos.id"), nullable=False)
-    consejero_id = Column(Integer, ForeignKey("consejeros.id"), nullable=False)
+    garante_id = Column(Integer, ForeignKey("garantes.id"), nullable=False)
     otp_hash = Column(Text, nullable=False)
     token_enlace = Column(Text, unique=True, nullable=False, index=True)
     estado = Column(Text, nullable=False)

@@ -2,16 +2,21 @@ from datetime import datetime
 import hashlib
 import os
 import hmac
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.config import super_admin_config
+from app.core.config import super_admin_config, public_urls_config
 from app.core.slug import generar_slug_unico
 from app.db.database import SessionLocal
 from app.models.tenant import Tenant
-from app.models.sorteo import Sorteo
+from app.models.sorteo import Sorteo, Participante, Garante, Consejero, SesionOTP, ResultadoSorteo
+from app.models.catalogo import Zona, Torre, Parqueadero
 from app.models.log import LogAuditoria
+from app.services.email_service import enviar_correo_texto
+from app.services.log_service import registrar_log_auditoria
 
 
 def _super_admin_bearer(request: Request):
@@ -153,6 +158,16 @@ class TenantCreate(BaseModel):
     total_unidades: int | None = None
 
 
+class TenantPatch(BaseModel):
+    """Campos editables para PATCH /tenants/{id} — todos opcionales."""
+    nombre: str | None = None
+    nit: str | None = None
+    email_admin: str | None = None
+    municipio: str | None = None
+    total_unidades: int | None = None
+    estado: str | None = None
+
+
 class TenantOut(BaseModel):
     id: str
     slug: str | None
@@ -206,6 +221,24 @@ def crear_tenant(payload: TenantCreate, db: Session = Depends(get_db)) -> dict[s
     db.add(tenant)
     db.commit()
     db.refresh(tenant)
+
+    # T-311: Auditoria de creacion
+    registrar_log_auditoria(db, tenant.id, "TENANT_CREADO", f"nombre={tenant.nombre} email={tenant.email_admin}")
+    db.commit()
+
+    # T-311: Correo de bienvenida al admin del conjunto
+    dashboard_url = f"{public_urls_config.public_base_url}/static/dashboard.html"
+    cuerpo = (
+        f"¡Bienvenido a SorteoParking!\n\n"
+        f"Conjunto: {tenant.nombre}\n"
+        f"UUID del conjunto: {tenant.id}\n\n"
+        f"Accede a tu panel de administracion aqui:\n"
+        f"{dashboard_url}\n\n"
+        f"Usa el UUID de tu conjunto como token de acceso (Authorization: Bearer {tenant.id}).\n\n"
+        f"— SorteoParking"
+    )
+    enviar_correo_texto(tenant.email_admin, "Bienvenido a SorteoParking", cuerpo)
+
     return _tenant_to_dict(tenant)
 
 
@@ -215,22 +248,33 @@ def listar_tenants(db: Session = Depends(get_db)) -> list[dict[str, object]]:
     return [_tenant_to_dict(tenant) for tenant in tenants]
 
 
-@router.patch("/tenants/{tenant_id}")
-def actualizar_tenant(tenant_id: str, payload: TenantCreate, db: Session = Depends(get_db)) -> dict[str, object]:
+@router.get("/tenants/{tenant_id}")
+def detalle_tenant(tenant_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    if payload.nombre: tenant.nombre = payload.nombre
-    if payload.municipio: tenant.municipio = payload.municipio
-    if payload.email_admin: tenant.email_admin = payload.email_admin
+    return _tenant_to_dict(tenant)
+
+
+@router.patch("/tenants/{tenant_id}")
+def editar_tenant(tenant_id: str, payload: TenantPatch, db: Session = Depends(get_db)) -> dict[str, object]:
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    # Validar unicidad de NIT si se esta cambiando
     if payload.nit:
         existing_nit = db.query(Tenant).filter(Tenant.nit == payload.nit, Tenant.id != tenant_id).first()
         if existing_nit:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="NIT ya registrado por otro conjunto")
-    if payload.nit is not None: tenant.nit = payload.nit
-    if payload.total_unidades is not None: tenant.total_unidades = payload.total_unidades
+    if payload.estado and payload.estado not in ("ACTIVO", "SUSPENDIDO", "DEMO"):
+        raise HTTPException(status_code=400, detail="Estado invalido")
+    campos_aplicados = list(payload.model_dump(exclude_unset=True).keys())
+    for key, val in payload.model_dump(exclude_unset=True).items():
+        setattr(tenant, key, val)
     db.commit()
     db.refresh(tenant)
+    registrar_log_auditoria(db, tenant_id, "TENANT_EDITADO", f"campos={campos_aplicados}")
+    db.commit()
     return _tenant_to_dict(tenant)
 
 
@@ -245,6 +289,58 @@ def suspender_reactivar_tenant(tenant_id: str, payload: TenantEstado, db: Sessio
     db.commit()
     db.refresh(tenant)
     return _tenant_to_dict(tenant)
+
+
+@router.delete("/tenants/{tenant_id}", status_code=status.HTTP_200_OK)
+def eliminar_tenant(tenant_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+
+    # Verificar si hay sorteos COMPLETADOS — no se permite eliminar
+    sorteos_completados = db.query(Sorteo).filter(
+        Sorteo.tenant_id == tenant_id,
+        Sorteo.estado == "COMPLETADO"
+    ).first()
+    if sorteos_completados:
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar: el tenant tiene sorteos COMPLETADOS"
+        )
+
+    # Auditar ANTES de eliminar en cascada (LogAuditoria se borra junto con lo demas)
+    registrar_log_auditoria(db, tenant_id, "TENANT_ELIMINADO",
+                            f"nombre={tenant.nombre} email={tenant.email_admin}")
+    db.flush()
+
+    # Eliminar en cascada todos los datos del tenant
+    for model in [ResultadoSorteo, SesionOTP, Consejero, Garante, Participante,
+                   Parqueadero, Torre, Zona, Sorteo, LogAuditoria]:
+        db.query(model).filter(model.tenant_id == tenant_id).delete()
+    db.delete(tenant)
+    db.commit()
+
+    return {"mensaje": f"Tenant {tenant_id} eliminado exitosamente"}
+
+
+@router.post("/tenants/{tenant_id}/rotar-token")
+def rotar_token(tenant_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    nuevo_id = str(uuid4())
+    # Migrar tenant_id en todas las tablas hijas al nuevo UUID
+    for tabla in [Zona, Torre, Parqueadero, Participante, Garante, Consejero,
+                   Sorteo, SesionOTP, ResultadoSorteo, LogAuditoria]:
+        db.query(tabla).filter(tabla.tenant_id == tenant_id).update(
+            {"tenant_id": nuevo_id}, synchronize_session=False
+        )
+    # Actualizar la PK del tenant
+    tenant.id = nuevo_id
+    db.commit()
+    registrar_log_auditoria(db, nuevo_id, "TOKEN_ROTADO", f"tenant_id_anterior={tenant_id}")
+    db.commit()
+    return {"nuevo_token": nuevo_id}
 
 
 @router.get("/metricas")

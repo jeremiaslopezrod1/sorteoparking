@@ -34,7 +34,7 @@ from app.core.security import enforce_tenant_scope
 
 from app.models.catalogo import Parqueadero
 
-from app.models.sorteo import Consejero, Participante, ResultadoSorteo, SesionOTP, Sorteo
+from app.models.sorteo import Garante, Participante, ResultadoSorteo, SesionOTP, Sorteo
 
 from app.models.tenant import Tenant
 
@@ -471,7 +471,7 @@ def cargar_excel_elegibles(db: Session, tenant_id: str, contenido: bytes) -> dic
 
 
 
-def _mensaje_otp_consejero(nombre_conjunto: str, nombre_consejero: str, otp: str, token: str, sorteo_id: int) -> str:
+def _mensaje_otp_garante(nombre_conjunto: str, nombre_garante: str, otp: str, token: str, sorteo_id: int) -> str:
 
     base = public_urls_config.public_base_url.rstrip("/")
 
@@ -481,7 +481,7 @@ def _mensaje_otp_consejero(nombre_conjunto: str, nombre_consejero: str, otp: str
 
         f"SorteoParking — {nombre_conjunto}\n"
 
-        f"Hola {nombre_consejero}, su codigo OTP es: {otp}\n"
+        f"Hola {nombre_garante}, su codigo OTP es: {otp}\n"
 
         f"Confirme aqui: {enlace}\n"
 
@@ -493,7 +493,7 @@ def _mensaje_otp_consejero(nombre_conjunto: str, nombre_consejero: str, otp: str
 
 
 
-def _entregar_mensaje_consejero(
+def _entregar_mensaje_garante(
 
     email: str | None,
 
@@ -523,24 +523,27 @@ def iniciar_sorteo(
 
     sorteo_id: int,
 
-    consejeros: list[dict[str, str | None]],
+    num_garantes: int,
+
+    garantes: list[dict[str, str | None]],
 
 ) -> dict[str, Any]:
 
-    """Crea consejeros, OTPs, snapshot y envia OTP por email (SDD §5.3, §6.2)."""
-    logger.warning("INICIAR_SORTEO_START | tenant=%s sorteo_id=%s total_consejeros=%d", tenant_id, sorteo_id, len(consejeros))
-    emails_consejeros = [c.get("email") for c in consejeros]
-    logger.warning("INICIAR_SORTEO_CONSEJEROS | tenant=%s sorteo_id=%s emails=%s", tenant_id, sorteo_id, emails_consejeros)
+    """Crea garantes, OTPs, snapshot y envia OTP por email (SDD §5.3, §6.2)."""
+    logger.warning("INICIAR_SORTEO_START | tenant=%s sorteo_id=%s total_garantes=%d", tenant_id, sorteo_id, len(garantes))
+    emails_garantes = [g.get("email") for g in garantes]
+    logger.warning("INICIAR_SORTEO_GARANTES | tenant=%s sorteo_id=%s emails=%s", tenant_id, sorteo_id, emails_garantes)
 
     try:
-        if len(consejeros) != 5:
-
+        if not (3 <= num_garantes <= 10):
             raise HTTPException(
-
                 status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="Se requieren exactamente 5 consejeros",
-
+                detail="num_garantes debe estar entre 3 y 10",
+            )
+        if len(garantes) != num_garantes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Se requieren exactamente {num_garantes} garantes",
             )
 
         sorteo = _obtener_sorteo_tenant(db, tenant_id, sorteo_id)
@@ -577,6 +580,9 @@ def iniciar_sorteo(
                 detail="No hay catálogo de parqueaderos cargado. Use POST /catalogo/carga-csv primero.",
             )
 
+        sorteo.num_garantes = num_garantes
+        db.flush()
+
         logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=participantes_y_snapshot", tenant_id, sorteo_id)
         participantes = (
 
@@ -600,7 +606,7 @@ def iniciar_sorteo(
 
         db.query(SesionOTP).filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id).delete()
 
-        db.query(Consejero).filter(Consejero.sorteo_id == sorteo_id, Consejero.tenant_id == tenant_id).delete()
+        db.query(Garante).filter(Garante.sorteo_id == sorteo_id, Garante.tenant_id == tenant_id).delete()
 
         db.flush()
 
@@ -611,33 +617,33 @@ def iniciar_sorteo(
 
         expira = datetime.now() + timedelta(minutes=30)
 
-        sesiones_creadas: list[tuple[SesionOTP, Consejero, str]] = []
+        sesiones_creadas: list[tuple[SesionOTP, Garante, str]] = []
 
-        for item in consejeros:
+        for item in garantes:
 
-            nombre_c = str(item.get("nombre") or "").strip()
+            nombre_g = str(item.get("nombre") or "").strip()
 
-            email_c = (str(item.get("email")).strip() if item.get("email") else None) or None
+            email_g = (str(item.get("email")).strip() if item.get("email") else None) or None
 
-            if not nombre_c or not email_c:
+            if not nombre_g or not email_g:
 
                 db.rollback()
 
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cada consejero requiere nombre y email")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cada garante requiere nombre y email")
 
-            cons = Consejero(
+            g = Garante(
 
                 tenant_id=tenant_id,
 
                 sorteo_id=sorteo_id,
 
-                nombre=nombre_c,
+                nombre=nombre_g,
 
-                email=email_c,
+                email=email_g,
 
             )
 
-            db.add(cons)
+            db.add(g)
 
             db.flush()
 
@@ -651,7 +657,7 @@ def iniciar_sorteo(
 
                 sorteo_id=sorteo_id,
 
-                consejero_id=cons.id,
+                garante_id=g.id,
 
                 otp_hash=hashear_otp(otp_plano),
 
@@ -665,11 +671,11 @@ def iniciar_sorteo(
 
             db.add(ses)
 
-            sesiones_creadas.append((ses, cons, otp_plano))
+            sesiones_creadas.append((ses, g, otp_plano))
 
         db.flush()
 
-        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=envio_smtp consejeros_creados=%d", tenant_id, sorteo_id, len(sesiones_creadas))
+        logger.warning("INICIAR_SORTEO_ETAPA | tenant=%s sorteo_id=%s etapa=envio_smtp garantes_creados=%d", tenant_id, sorteo_id, len(sesiones_creadas))
         otp_debug_info: list[dict[str, str]] = []
 
         es_desarrollo = (
@@ -678,13 +684,13 @@ def iniciar_sorteo(
 
         )
 
-        for ses, cons, otp_plano in sesiones_creadas:
+        for ses, gar, otp_plano in sesiones_creadas:
             try:
-                cuerpo = _mensaje_otp_consejero(nombre_conjunto, cons.nombre, otp_plano, ses.token_enlace, sorteo_id)
+                cuerpo = _mensaje_otp_garante(nombre_conjunto, gar.nombre, otp_plano, ses.token_enlace, sorteo_id)
 
-                ok, canal = _entregar_mensaje_consejero(
+                ok, canal = _entregar_mensaje_garante(
 
-                    cons.email,
+                    gar.email,
 
                     f"OTP SorteoParking — {nombre_conjunto}",
 
@@ -692,7 +698,7 @@ def iniciar_sorteo(
 
                 )
             except Exception as e:
-                logger.exception("INICIAR_SORTEO_SMTP_ERROR | tenant=%s sorteo_id=%s consejero=%s email=%s", tenant_id, sorteo_id, cons.nombre, cons.email)
+                logger.exception("INICIAR_SORTEO_SMTP_ERROR | tenant=%s sorteo_id=%s garante=%s email=%s", tenant_id, sorteo_id, gar.nombre, gar.email)
                 ok = False
                 canal = "excepcion"
 
@@ -700,7 +706,7 @@ def iniciar_sorteo(
                 # Marcar esta sesion como fallida en lugar de rollback total
                 ses.estado = "FALLO_EMAIL"
                 db.flush()
-                logger.warning("No se pudo enviar OTP por correo a %s", cons.email)
+                logger.warning("No se pudo enviar OTP por correo a %s", gar.email)
 
             if es_desarrollo and deploy_config.app_env == "development":
 
@@ -708,7 +714,7 @@ def iniciar_sorteo(
 
                 otp_debug_info.append({
 
-                    "consejero": cons.nombre,
+                    "garante": gar.nombre,
 
                     "otp": otp_plano,
 
@@ -775,7 +781,7 @@ def confirmar_otp(
 
 ) -> dict[str, str]:
 
-    """Confirma OTP de consejero (SDD §5.3, §6.6 T-118). Sin loguear OTP en auditoria."""
+    """Confirma OTP de garante (SDD §5.3, §6.6 T-118). Sin loguear OTP en auditoria."""
 
     # Lock pesimista contra race condition (SDD §6.6)
     ses = (
@@ -861,7 +867,7 @@ def confirmar_otp(
 
     db.flush()
 
-    # Verificar si es el 5to OTP → LISTO
+    # Verificar si todos los garantes confirmaron → LISTO
     confirmados = (
 
         db.query(SesionOTP)
@@ -880,7 +886,7 @@ def confirmar_otp(
 
     )
 
-    if confirmados >= 5:
+    if confirmados >= sorteo.num_garantes:
 
         sorteo.estado = "LISTO"
 
@@ -907,7 +913,7 @@ def confirmar_otp(
 
 def estado_otp(db: Session, tenant_id: str, sorteo_id: int, token_enlace: str | None = None) -> dict[str, Any]:
 
-    """Progreso 0-5 con nombres (SDD §5.3)."""
+    """Progreso de confirmación de garantes con nombres (SDD §5.3)."""
 
     # Cuando viene del panel OTP (sin Bearer), resolver tenant y sorteo desde token_enlace
     if not tenant_id and token_enlace:
@@ -927,13 +933,13 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int, token_enlace: str | 
 
     sesiones = (
 
-        db.query(SesionOTP, Consejero)
+        db.query(SesionOTP, Garante)
 
-        .join(Consejero, SesionOTP.consejero_id == Consejero.id)
+        .join(Garante, SesionOTP.garante_id == Garante.id)
 
         .filter(SesionOTP.sorteo_id == sorteo_id, SesionOTP.tenant_id == tenant_id)
 
-        .order_by(Consejero.id)
+        .order_by(Garante.id)
 
         .all()
 
@@ -953,13 +959,13 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int, token_enlace: str | 
 
     items: list[dict[str, str]] = []
 
-    for ses, cons in sesiones:
+    for ses, gar in sesiones:
 
         items.append(
 
             {
 
-                "nombre": cons.nombre,
+                "nombre": gar.nombre,
 
                 "estado": ses.estado,
 
@@ -975,7 +981,7 @@ def estado_otp(db: Session, tenant_id: str, sorteo_id: int, token_enlace: str | 
 
         "total": len(sesiones),
 
-        "consejeros": items,
+        "garantes": items,
         "mi_estado": mi_estado,
         "sesion_id": sesion_id,
         "expira_en": expira_en,
