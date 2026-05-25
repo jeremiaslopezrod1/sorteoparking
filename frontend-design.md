@@ -1,6 +1,6 @@
 # Skill: frontend-design
 # Fuente: https://github.com/anthropics/skills --skill frontend-design
-# Adaptado para: SorteoParking v1.0
+# Adaptado para: SDD_v2.1_SorteoParking
 
 ## Propósito
 
