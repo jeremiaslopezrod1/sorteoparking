@@ -145,7 +145,7 @@
         const data = await res.json();
         if (res.ok) {
           _csrfToken = data.csrf_token;
-          await new Promise(r => setTimeout(r, 150));
+          await new Promise(r => setTimeout(r, 1000));
           window.location.href = '/static/superadmin.html';
         } else {
           errEl.textContent = data.detail || 'Credenciales incorrectas';
