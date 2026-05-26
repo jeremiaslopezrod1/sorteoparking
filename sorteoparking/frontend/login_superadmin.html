@@ -99,6 +99,11 @@
         </p>
       </form>
     </div>
+        <div class="input-group" id="totp-section" style="display:none">
+          <label class="input-label" for="totp-code">Código TOTP</label>
+          <input id="totp-code" class="input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
+          <p style="font-size:12px;color:var(--ink-tertiary);margin-top:4px;">Código de 6 dígitos desde su app de autenticación.</p>
+        </div>
   </div>
 
   <script>
@@ -126,7 +131,9 @@
       const errEl = document.getElementById('login-error');
       document.getElementById('login-btn').disabled = true;
 
+      const totp = document.getElementById('totp-code').value.trim();
       const body = { username: user, password: pass };
+      if (totp) { body.totp_code = totp; }
 
       try {
         const res = await fetch('/auth/login/superadmin', {
