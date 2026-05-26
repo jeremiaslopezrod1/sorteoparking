@@ -201,6 +201,7 @@
   <!-- Dashboard -->
   <div id="dashboard-view" class="admin-dashboard">
     <main class="page page-wide">
+      <div id="dash-error" style="display:none;background:rgba(215,0,21,0.06);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:16px;font-size:14px;color:var(--ink-danger);"></div>
       <div class="hero-dashboard">
         <h1>Super Admin</h1>
         <p>Gestión global de conjuntos y métricas del sistema</p>
@@ -343,12 +344,20 @@
   </div>
 
   <script>
+    console.log('SUPERADMIN INIT');
     let token = null;
     let _csrfToken = null;  // CSRF cache (del body del login o de cookie)
 
-    // Login
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    function showDashError(msg) {
+      var el = document.getElementById('dash-error');
+      if (el) { el.textContent = msg; el.style.display = 'block'; }
+    }
+
+    // Login (dead code si el login esta en login_superadmin.html)
+    var loginForm = document.getElementById('login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
       const user = document.getElementById('username').value.trim();
       const pass = document.getElementById('password').value;
       const errEl = document.getElementById('login-error');
@@ -386,6 +395,7 @@
       }
       document.getElementById('login-btn').disabled = false;
     });
+    }  // end if(loginForm)
 
     /** Obtiene el CSRF token: cookie > cache del login > sessionStorage */
     function getCsrfToken() {
@@ -601,18 +611,30 @@
       } catch(e) {}
     }
 
-    document.getElementById('log-filter-btn').addEventListener('click', () => {
-      logsPage = 1;
-      loadLogs();
-    });
-    document.getElementById('log-refresh-btn').addEventListener('click', () => { loadLogs(); });
-    document.getElementById('logs-prev').addEventListener('click', () => {
-      if (logsPage > 1) { logsPage--; loadLogs(); }
-    });
-    document.getElementById('logs-next').addEventListener('click', () => {
-      logsPage++;
-      loadLogs();
-    });
+    var logFilterBtn = document.getElementById('log-filter-btn');
+    if (logFilterBtn) {
+      logFilterBtn.addEventListener('click', () => {
+        logsPage = 1;
+        loadLogs();
+      });
+    }
+    var logRefreshBtn = document.getElementById('log-refresh-btn');
+    if (logRefreshBtn) {
+      logRefreshBtn.addEventListener('click', () => { loadLogs(); });
+    }
+    var logsPrevBtn = document.getElementById('logs-prev');
+    if (logsPrevBtn) {
+      logsPrevBtn.addEventListener('click', () => {
+        if (logsPage > 1) { logsPage--; loadLogs(); }
+      });
+    }
+    var logsNextBtn = document.getElementById('logs-next');
+    if (logsNextBtn) {
+      logsNextBtn.addEventListener('click', () => {
+        logsPage++;
+        loadLogs();
+      });
+    }
 
     // ── T-310: Edit, Delete, Rotate ──
     function editarTenant(id) {
@@ -664,9 +686,12 @@
 
     // Check session on load
     (async () => {
+      console.log('SESSION CHECK: fetching /admin/metricas...');
       try {
         const res = await fetch('/admin/metricas', { credentials: 'include' });
+        console.log('SESSION CHECK: status=' + res.status);
         if (res.ok) {
+          console.log('SESSION CHECK: OK - showing dashboard');
           document.getElementById('dashboard-view').style.display = 'block';
           document.getElementById('logout-btn').style.display = '';
           document.getElementById('nav-user').style.display = '';
@@ -675,8 +700,14 @@
           loadMetrics();
           loadLogs();
           loadLogs();  // T-317: Load logs on dashboard show
+        } else {
+          console.log('SESSION CHECK: failed status=' + res.status + ' - redirecting');
+          window.location.href = '/static/login_superadmin.html';
         }
-      } catch(e) {}
+      } catch(e) {
+        console.log('SESSION CHECK: network error', e);
+        showDashError('Error de conexion al cargar el dashboard: ' + e.message);
+      }
     })();
   </script>
 </body>
