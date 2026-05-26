@@ -146,7 +146,7 @@
         if (res.ok) {
           _csrfToken = data.csrf_token;
           await new Promise(r => setTimeout(r, 1000));
-          window.location.href = '/static/superadmin.html';
+          window.location.href = '/static/superadmin.html?fresh=1';
         } else {
           errEl.textContent = data.detail || 'Credenciales incorrectas';
           errEl.className = 'login-error visible';

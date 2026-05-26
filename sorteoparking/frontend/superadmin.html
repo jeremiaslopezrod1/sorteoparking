@@ -686,6 +686,20 @@
 
     // Check session on load
     (async () => {
+      // Si venimos de login exitoso, mostrar dashboard directo sin session check
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('fresh') === '1') {
+        console.log('SESSION CHECK: fresh login - skip check, show dashboard');
+        document.getElementById('dashboard-view').style.display = 'block';
+        document.getElementById('logout-btn').style.display = '';
+        document.getElementById('nav-user').style.display = '';
+        document.getElementById('nav-dashboard').style.display = '';
+        try { sessionStorage.setItem('sp_fresh_login', '1'); } catch(e) {}
+        loadTenants();
+        loadMetrics();
+        loadLogs();
+        return;
+      }
       console.log('SESSION CHECK: fetching /admin/metricas...');
       try {
         const res = await fetch('/admin/metricas', { credentials: 'include' });
