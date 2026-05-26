@@ -376,24 +376,25 @@
       return null;
     }
 
-    // ── T-312: Auto-fill UUID from URL query param (?token=xxx) ──
+    // ── T-312 + Login flow: read UUID from URL param OR sessionStorage ──
     (function() {
+      // Priority 1: URL query param (?token=xxx)
       const params = new URLSearchParams(window.location.search);
-      const uuid = params.get('token');
-      if (uuid) {
-        document.getElementById('st-token').value = uuid;
-        document.getElementById('cat-token').value = uuid;
+      const urlUuid = params.get('token');
+      if (urlUuid) {
+        document.getElementById('st-token').value = urlUuid;
+        document.getElementById('cat-token').value = urlUuid;
+        // Save to sessionStorage so subsequent loads dont need the URL param
+        sessionStorage.setItem('sorteo_tenant_uuid', urlUuid);
+        return;
       }
-    })();
-
-    // ── Login flow: read UUID from sessionStorage, redirect if missing ──
-    (function() {
+      // Priority 2: sessionStorage (from login.html)
       const uuid = sessionStorage.getItem('sorteo_tenant_uuid');
       if (uuid) {
         document.getElementById('st-token').value = uuid;
         document.getElementById('cat-token').value = uuid;
       } else {
-        // No UUID in sessionStorage — redirect to login
+        // No UUID anywhere — redirect to login
         window.location.href = '/static/login.html';
       }
     })();
