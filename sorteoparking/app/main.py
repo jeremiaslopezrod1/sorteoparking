@@ -162,8 +162,34 @@ async def startup() -> None:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "version": "2.1", "db": "ok"}
+def health():
+    """Health check con verificación real de BD (SDD §3.9).
+
+    Retorna 200 si la BD responde, 503 si no.
+    """
+    from app.db.database import SessionLocal
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+    from fastapi import Response
+
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        db_status = "ok"
+    except Exception:
+        return Response(
+            status_code=503,
+            content={"status": "error", "version": "2.1", "db": "unreachable", "timestamp": datetime.now(timezone.utc).isoformat()},
+            media_type="application/json",
+        )
+
+    return {
+        "status": "ok",
+        "version": "2.1",
+        "db": db_status,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 app.include_router(debug.router)

@@ -365,3 +365,46 @@ def backup_manual() -> dict:
     if not exito:
         raise HTTPException(500, "Backup fallo — revisar logs")
     return {"mensaje": "Backup ejecutado exitosamente", "backup_dir": str(os.getenv("BACKUP_DIR", "/data/backups"))}
+
+
+# ── T-317: AUDIT LOGS ────────────────────────────────────────────────
+
+@router.get("/logs")
+def listar_logs_auditoria(
+    db: Session = Depends(get_db),
+    page: int = 1,
+    per_page: int = 50,
+    evento: str | None = None,
+    tenant_id: str | None = None,
+):
+    """Retorna logs de auditoría paginados y filtrables.
+
+    T-317: Exclusivo SUPER_ADMIN. Permite filtrar por evento y tenant_id.
+    """
+    query = db.query(LogAuditoria)
+
+    if evento:
+        query = query.filter(LogAuditoria.evento == evento)
+    if tenant_id:
+        query = query.filter(LogAuditoria.tenant_id == tenant_id)
+
+    total = query.limit(100000).count()
+    query = query.order_by(LogAuditoria.id.desc())
+    logs = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    return {
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "logs": [
+            {
+                "id": l.id,
+                "tenant_id": l.tenant_id,
+                "evento": l.evento,
+                "payload": l.payload,
+                "created_at": l.created_at.isoformat() if l.created_at else None,
+                "hash_actual": l.hash_actual,
+            }
+            for l in logs
+        ],
+    }

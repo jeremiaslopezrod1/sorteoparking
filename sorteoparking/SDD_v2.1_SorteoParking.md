@@ -140,6 +140,7 @@ sorteoparking/
 │       └── database.py
 ├── frontend/
 │   ├── index.html ← NUEVO v2.1 (Apple Design System)
+│   ├── login.html ← NUEVO v2.1 (Login TENANT_ADMIN con UUID)
 │   ├── dashboard.html, otp_panel.html, publico.html, superadmin.html
 ├── DESIGN.md ← Apple Design System
 ├── apple/DESIGN.md
@@ -167,6 +168,7 @@ Origen: `https://sorteoparking.onrender.com`. Credentials, métodos y headers pe
 | Panel | Acceso | Sin credencial |
 |---|---|---|
 | `index.html` | Público | — |
+| `login.html` | Público | Redirect a `dashboard.html` si UUID válido |
 | `publico.html` | Público | — |
 | `otp_panel.html` | Solo con `token_enlace` válido | Redirect a `index.html` |
 | `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
@@ -330,6 +332,7 @@ class SesionOTP(Base):
 |---|---|---|
 | POST | `/auth/login/superadmin` | — |
 | POST | `/auth/logout/superadmin` | Sesión |
+| POST | `/auth/login/tenant` ⭐ | — |
 | POST | `/auth/superadmin/recuperar-password` ⭐ | — |
 | POST | `/auth/superadmin/reset-password` ⭐ | Token |
 
@@ -483,8 +486,29 @@ Página pública con Apple Design System. Contenido:
 - Marco legal (Decreto 555/2021, Ley 675/2001)
 - Cumplimiento Habeas Data (Ley 1581/2012)
 - Información de contacto
+- Botón "Acceder" en esquina superior derecha → redirige a `login.html`
 - Enlace oculto a `superadmin.html`
 - Diseño responsivo mobile-first con breakpoints Apple
+
+### 10.2.1 login.html — Login TENANT_ADMIN (NUEVA v2.1)
+
+Página pública con Apple Design System. Flujo:
+
+1. Campo de texto: ingreso del UUID de conjunto
+2. Validación contra backend: `POST /auth/login/tenant` con `{"tenant_id": "<uuid>"}`
+3. UUID válido → almacena en `sessionStorage` → redirect a `dashboard.html`
+4. UUID inválido → mensaje de error en la misma pantalla, campo listo para reintentar
+
+**Endpoint de validación (NUEVO):**
+
+```
+POST /auth/login/tenant  ⭐ (público)
+Body: {"tenant_id": "<uuid>"}
+→ 200: {"valid": true, "nombre": "...", "municipio": "..."}
+→ 401: {"valid": false, "error": "UUID no válido o conjunto suspendido"}
+```
+
+La validación verifica: UUID existe en tabla `tenants` y `estado = ACTIVO`. No expone información sensible.
 
 ### 10.3 Responsividad (v2.1)
 
@@ -498,6 +522,8 @@ Spinner "Ejecutando sorteo..." → fade-in progresivo de resultados en parte sup
 
 | Desde | Hacia | Mecanismo |
 |---|---|---|
+| `index.html` → "Acceder" | `login.html` | Navegación |
+| `login.html` (UUID válido) | `dashboard.html` | Redirect con UUID en sessionStorage |
 | `superadmin.html` | `dashboard.html` | Botón "Dashboard" por tenant |
 | `dashboard.html` | Vista pública | Botón post-ejecución |
 | `dashboard.html` | `superadmin.html` | Botón "Volver" |
@@ -626,7 +652,7 @@ CA-01 a CA-24 — todos marcados ✅. Ver SDD v2.0 para detalle.
 | CA-26 | SUPER_ADMIN elimina tenant sin sorteos completados | ✅ |
 | CA-27 | SUPER_ADMIN no elimina tenant con sorteos completados (409) | ✅ |
 | CA-28 | Vista pública muestra resultados correctamente | ✅ |
-| CA-29 | Todos los paneles responsivos (Apple Design System) | ⬜ |
+| CA-29 | Todos los paneles responsivos (Apple Design System) | ✅ |
 | CA-30 | 409 catálogo cargado presenta opciones de acción | ✅ |
 | CA-31 | Número de garantes configurable 3–10 | ✅ |
 | CA-32 | Interfaz usa "garantes" no "consejeros" | ✅ |
@@ -642,6 +668,8 @@ CA-01 a CA-24 — todos marcados ✅. Ver SDD v2.0 para detalle.
 | CA-42 | superadmin.html sin sesión → 401 | ✅ |
 | CA-43 | otp_panel.html sin token_enlace → redirect | ✅ |
 | CA-44 | GET /health → 200 con estado DB | ✅ |
+| CA-45 | index.html → botón "Acceder" → login.html | ✅ |
+| CA-46 | login.html: UUID válido → dashboard.html, UUID inválido → error | ✅ |
 
 ---
 
@@ -663,44 +691,45 @@ T-101 a T-122 y T-201 a T-211 (✅). Ver SDD v2.0.
 
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
-| T-301 | Bug vista pública | CA-28 | ⬜ |
-| T-302 | Manejo 409 catálogo cargado | CA-30 | ⬜ |
-| T-303 | Animación resultados | CA-33 | ⬜ |
+| T-301 | Bug vista pública | CA-28 | ✅ |
+| T-302 | Manejo 409 catálogo cargado | CA-30 | ✅ |
+| T-303 | Animación resultados | CA-33 | ✅ |
 
 #### Bloque B — Responsividad (Apple Design System)
 
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
-| T-304 | dashboard.html responsivo | CA-29 | ⬜ |
-| T-305 | otp_panel.html responsivo | CA-29 | ⬜ |
-| T-306 | publico.html responsivo | CA-29 | ⬜ |
-| T-307 | superadmin.html responsivo | CA-29 | ⬜ |
+| T-304 | dashboard.html responsivo | CA-29 | ✅ |
+| T-305 | otp_panel.html responsivo | CA-29 | ✅ |
+| T-306 | publico.html responsivo | CA-29 | ✅ |
+| T-307 | superadmin.html responsivo | CA-29 | ✅ |
 
 #### Bloque C — Features
 
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
-| T-308 | Garantes configurables | CA-31 | ⬜ |
-| T-309 | "consejeros" → "garantes" | CA-32 | ⬜ |
-| T-310 | CRUD tenants (editar + eliminar + rotar) | CA-25,26,27,38 | ⬜ |
-| T-311 | Correo bienvenida | CA-34 | ⬜ |
-| T-312 | Navegación entre paneles | CA-35 | ⬜ |
-| T-313 | Landing page index.html (Apple Design System) | CA-36 | ⬜ |
+| T-308 | Garantes configurables | CA-31 | ✅ |
+| T-309 | "consejeros" → "garantes" | CA-32 | ✅ |
+| T-310 | CRUD tenants (editar + eliminar + rotar) | CA-25,26,27,38 | ✅ |
+| T-311 | Correo bienvenida | CA-34 | ✅ |
+| T-312 | Navegación entre paneles | CA-35 | ✅ |
+| T-313 | Landing page index.html (Apple Design System) | CA-36 | ✅ |
 
 #### Bloque D — Seguridad
 
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
-| T-314 | Política acceso server-side paneles | CA-41,42,43 | ⬜ |
-| T-315 | Recuperación contraseña SUPER_ADMIN | CA-37 | ⬜ |
-| T-316 | 2FA TOTP SUPER_ADMIN | CA-39 | ⬜ |
-| T-317 | Audit trail SUPER_ADMIN | CA-40 | ⬜ |
+| T-314 | Política acceso server-side paneles | CA-41,42,43 | ✅ |
+| T-315 | Recuperación contraseña SUPER_ADMIN | CA-37 | ✅ |
+| T-316 | 2FA TOTP SUPER_ADMIN | CA-39 | ✅ |
+| T-317 | Audit trail SUPER_ADMIN | CA-40 | ✅ |
+| T-321 | Pantalla login TENANT_ADMIN (login.html + POST /auth/login/tenant) | CA-46 | ✅ |
 
 #### Bloque E — Infraestructura
 
 | ID | Tarea | CA | Estado |
 |---|---|---|---|
-| T-318 | Health check /health | CA-44 | ⬜ |
+| T-318 | Health check /health | CA-44 | ✅ |
 | T-319 | Ping externo anti-cold-start (configurar UptimeRobot a GET /health cada 10 min) | — | ✅ |
 | T-320 | Dominio sorteoparking.co + SSL (pendiente registro de dominio) | — | 📝 |
 

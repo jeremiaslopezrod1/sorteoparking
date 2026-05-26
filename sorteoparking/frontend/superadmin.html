@@ -93,6 +93,15 @@
       background-position: right 8px center;
     }
 
+    .btn-danger {
+      background: var(--ink-danger);
+      color: #fff;
+      border: none;
+    }
+    .btn-danger:hover {
+      background: #b00013;
+    }
+
   /* ── Responsive Design (Apple Breakpoints) ── */
   * { box-sizing: border-box; }
   img { max-width: 100%; height: auto; }
@@ -209,6 +218,11 @@
           <label class="input-label" for="password">Contraseña</label>
           <input id="password" class="input" type="password" required autocomplete="current-password" />
         </div>
+        <div class="input-group" id="totp-group">
+          <label class="input-label" for="totp-code">Código TOTP</label>
+          <input id="totp-code" class="input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
+          <p style="font-size:12px;color:var(--ink-tertiary);margin-top:4px;">Código de 6 dígitos desde su app de autenticación.</p>
+        </div>
         <p id="login-error" class="login-error">Credenciales inválidas</p>
         <button id="login-btn" class="btn btn-primary btn-lg btn-block" type="submit">
           Iniciar sesión
@@ -304,6 +318,63 @@
         </div>
         <div id="backup-out" class="status-box mt-4">—</div>
       </section>
+
+      <!-- T-317: Audit Logs -->
+      <section class="card mt-6">
+        <div class="card-header">
+          <h2 class="card-title">Logs de auditoría</h2>
+          <span class="badge badge-info" id="logs-count">0</span>
+        </div>
+        <div class="flex gap-3" style="flex-wrap:wrap;margin-bottom:16px;">
+          <div class="input-group" style="flex:1;min-width:160px;">
+            <label class="input-label" for="log-filter-evento" style="font-size:12px;">Filtrar por evento</label>
+            <select id="log-filter-evento" class="input" style="font-size:13px;">
+              <option value="">Todos</option>
+              <option value="SUPERADMIN_LOGIN_OK">Login exitoso</option>
+              <option value="SUPERADMIN_LOGIN_FALLO">Login fallido</option>
+              <option value="SUPERADMIN_LOGOUT">Logout</option>
+              <option value="TENANT_CREADO">Conjunto creado</option>
+              <option value="TENANT_EDITADO">Conjunto editado</option>
+              <option value="TENANT_ELIMINADO">Conjunto eliminado</option>
+              <option value="TOKEN_ROTADO">Token rotado</option>
+              <option value="PASSWORD_RESET_SOLICITADO">Reset solicitado</option>
+              <option value="PASSWORD_RESET_APLICADO">Reset aplicado</option>
+            </select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end;">
+            <button id="log-filter-btn" class="btn btn-secondary btn-sm">Filtrar</button>
+            <button id="log-refresh-btn" class="btn btn-secondary btn-sm" style="margin-left:4px;">⟳</button>
+          </div>
+        </div>
+        <div id="logs-container" style="max-height:400px;overflow-y:auto;">
+          <div class="empty-state" id="logs-empty">
+            <div class="empty-state-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.3">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/>
+                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+              </svg>
+            </div>
+            <p class="empty-state-desc">Sin registros de auditoría.</p>
+          </div>
+          <table id="logs-table" style="display:none;width:100%;font-size:12px;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink-tertiary);font-weight:500;">ID</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink-tertiary);font-weight:500;">Evento</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink-tertiary);font-weight:500;">Tenant</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink-tertiary);font-weight:500;">Payload</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink-tertiary);font-weight:500;">Fecha</th>
+              </tr>
+            </thead>
+            <tbody id="logs-tbody"></tbody>
+          </table>
+        </div>
+        <div class="flex gap-2" style="justify-content:center;margin-top:12px;">
+          <button id="logs-prev" class="btn btn-sm btn-secondary" disabled>← Anterior</button>
+          <span id="logs-page-info" style="font-size:13px;color:var(--ink-tertiary);line-height:32px;">Página 1</span>
+          <button id="logs-next" class="btn btn-sm btn-secondary">Siguiente →</button>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -331,8 +402,12 @@
       e.preventDefault();
       const user = document.getElementById('username').value.trim();
       const pass = document.getElementById('password').value;
+      const totp = document.getElementById('totp-code').value.trim();
       const errEl = document.getElementById('login-error');
       document.getElementById('login-btn').disabled = true;
+
+      const body = { username: user, password: pass };
+      if (totp) { body.totp_code = totp; }
 
       try {
         const res = await fetch('/auth/login/superadmin', {
@@ -429,6 +504,9 @@
             </div>
             <div class="tenant-actions">
               <a href="/static/dashboard.html?token=${t.id}" class="btn btn-sm btn-secondary" style="font-size:12px;padding:4px 12px;height:32px;min-height:unset;text-decoration:none;">Dashboard</a>
+              <button onclick="editarTenant('${t.id}')" class="btn btn-sm btn-secondary" style="font-size:12px;padding:4px 12px;height:32px;min-height:unset;">Editar</button>
+              <button onclick="rotarToken('${t.id}')" class="btn btn-sm btn-secondary" style="font-size:12px;padding:4px 12px;height:32px;min-height:unset;">Rotar token</button>
+              <button onclick="eliminarTenant('${t.id}', '${escHtml(t.nombre)}')" class="btn btn-sm btn-danger" style="font-size:12px;padding:4px 12px;height:32px;min-height:unset;">Eliminar</button>
               <span class="badge ${t.estado === 'ACTIVO' ? 'badge-success' : t.estado === 'SUSPENDIDO' ? 'badge-error' : 'badge-warning'}">${t.estado}</span>
               <select class="status-select" data-id="${t.id}" onchange="cambiarEstado('${t.id}', this.value)">
                 <option value="ACTIVO" ${t.estado === 'ACTIVO' ? 'selected' : ''}>Activo</option>
@@ -523,11 +601,126 @@
       } catch(e) { out.textContent = 'Error de red: ' + e.message; }
     });
 
+    // ── T-317: Audit Log Viewer ──
+    let logsPage = 1;
+    const LOGS_PER_PAGE = 50;
+
+    async function loadLogs() {
+      const evento = document.getElementById('log-filter-evento').value;
+      let url = '/admin/logs?page=' + logsPage + '&per_page=' + LOGS_PER_PAGE;
+      if (evento) url += '&evento=' + encodeURIComponent(evento);
+
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) { return; }
+        const data = await res.json();
+        const tbody = document.getElementById('logs-tbody');
+        const table = document.getElementById('logs-table');
+        const empty = document.getElementById('logs-empty');
+
+        document.getElementById('logs-count').textContent = data.total;
+
+        if (!data.logs || data.logs.length === 0) {
+          empty.style.display = '';
+          table.style.display = 'none';
+          return;
+        }
+
+        empty.style.display = 'none';
+        table.style.display = '';
+        tbody.innerHTML = data.logs.map(l => {
+          const eventoLabel = l.evento.replace(/_/g, ' ');
+          const payload = escHtml(l.payload || '');
+          const tenant = l.tenant_id && l.tenant_id !== 'SUPER_ADMIN'
+            ? escHtml(l.tenant_id.slice(0, 8) + '...')
+            : escHtml(l.tenant_id || '—');
+          const fecha = l.created_at ? new Date(l.created_at + 'Z').toLocaleString('es-CO') : '—';
+          return '<tr>' +
+            '<td style="padding:6px 8px;border-bottom:1px solid var(--hairline-light);font-family:var(--font-mono);color:var(--ink-tertiary);">' + l.id + '</td>' +
+            '<td style="padding:6px 8px;border-bottom:1px solid var(--hairline-light);font-weight:500;">' + escHtml(eventoLabel) + '</td>' +
+            '<td style="padding:6px 8px;border-bottom:1px solid var(--hairline-light);font-family:var(--font-mono);font-size:11px;color:var(--ink-secondary);">' + tenant + '</td>' +
+            '<td style="padding:6px 8px;border-bottom:1px solid var(--hairline-light);font-size:11px;color:var(--ink-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + payload + '</td>' +
+            '<td style="padding:6px 8px;border-bottom:1px solid var(--hairline-light);font-size:11px;color:var(--ink-tertiary);white-space:nowrap;">' + fecha + '</td>' +
+            '</tr>';
+        }).join('');
+
+        // Pagination
+        const totalPages = Math.max(1, Math.ceil(data.total / LOGS_PER_PAGE));
+        document.getElementById('logs-page-info').textContent = 'Página ' + logsPage + ' de ' + totalPages;
+        document.getElementById('logs-prev').disabled = logsPage <= 1;
+        document.getElementById('logs-next').disabled = logsPage >= totalPages;
+      } catch(e) {}
+    }
+
+    document.getElementById('log-filter-btn').addEventListener('click', () => {
+      logsPage = 1;
+      loadLogs();
+    });
+    document.getElementById('log-refresh-btn').addEventListener('click', () => { loadLogs(); });
+    document.getElementById('logs-prev').addEventListener('click', () => {
+      if (logsPage > 1) { logsPage--; loadLogs(); }
+    });
+    document.getElementById('logs-next').addEventListener('click', () => {
+      logsPage++;
+      loadLogs();
+    });
+
+    // ── T-310: Edit, Delete, Rotate ──
+    function editarTenant(id) {
+      var nombre = prompt('Nuevo nombre del conjunto:');
+      if (!nombre) return;
+      var municipio = prompt('Nuevo municipio:');
+      if (!municipio) return;
+      var email = prompt('Nuevo email del admin:');
+      if (!email) return;
+      
+      fetch('/admin/tenants/' + id, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+        body: JSON.stringify({ nombre: nombre, municipio: municipio, email_admin: email }),
+      }).then(function(res) {
+        if (res.ok) { loadTenants(); loadMetrics(); alert('Conjunto actualizado'); }
+        else { res.json().then(function(d) { alert('Error: ' + (d.detail || 'desconocido')); }); }
+      }).catch(function(e) { alert('Error de conexión'); });
+    }
+
+    function eliminarTenant(id, nombre) {
+      if (!confirm('¿Está seguro de eliminar el conjunto \u201C' + nombre + '\u201D?\n\nEsta acción es permanente y eliminará todos los datos asociados.')) return;
+      if (!confirm('¿CONFIRMA? No hay vuelta atrás.')) return;
+      
+      fetch('/admin/tenants/' + id, {
+        method: 'DELETE', credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() },
+      }).then(function(res) {
+        if (res.ok) { loadTenants(); loadMetrics(); alert('Conjunto eliminado'); }
+        else { res.json().then(function(d) { alert('Error: ' + (d.detail || 'Error al eliminar')); }); }
+      }).catch(function(e) { alert('Error de conexión'); });
+    }
+
+    function rotarToken(id) {
+      if (!confirm('¿Rotar token? El UUID actual dejará de funcionar y se generará uno nuevo.')) return;
+      
+      fetch('/admin/tenants/' + id + '/rotar-token', {
+        method: 'POST', credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() },
+      }).then(function(res) { return res.json(); }).then(function(data) {
+        if (data.nuevo_id) {
+          alert('Nuevo UUID: ' + data.nuevo_id + '\n\nCopie este UUID y compártalo con el administrador del conjunto.');
+          loadTenants();
+        } else {
+          alert('Error: ' + JSON.stringify(data));
+        }
+      }).catch(function(e) { alert('Error de conexión'); });
+    }
+
     // Check session on load
     (async () => {
       try {
         const res = await fetch('/admin/metricas', { credentials: 'include' });
-        if (res.ok) { showDashboard(); }
+        if (res.ok) {
+          showDashboard();
+          loadLogs();  // T-317: Load logs on dashboard show
+        }
       } catch(e) {}
     })();
   </script>

@@ -39,6 +39,11 @@ class LoginRequest(BaseModel):
     totp_code: str | None = None
 
 
+class TenantLoginRequest(BaseModel):
+    """T-321: Login de TENANT_ADMIN vía UUID."""
+    tenant_id: str = Field(..., min_length=36, max_length=36)
+
+
 class RecuperarPasswordIn(BaseModel):
     """T-315: Solicitud de recuperación de contraseña."""
     email: str = Field(..., min_length=5, max_length=120)
@@ -225,6 +230,71 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         "csrf_token": csrf_token,
         "expires_in": 3600
     }
+
+
+# ── T-321: LOGIN TENANT_ADMIN (UUID) ────────────────────────────────
+
+@router.post("/login/tenant", status_code=status.HTTP_200_OK)
+@limiter.limit("10/15minutes")
+async def login_tenant(request: Request, payload: TenantLoginRequest):
+    """Valida UUID de conjunto y retorna datos del tenant.
+
+    Público (sin Bearer). Verifica que el UUID exista en la tabla
+    `tenants` y que su estado sea ACTIVO. Retorna nombre y municipio
+    para que el frontend los guarde en sessionStorage.
+
+    Contrato (SDD §10.2.1):
+        → 200: {"valid": true, "nombre": "...", "municipio": "..."}
+        → 401: {"valid": false, "error": "UUID no válido o conjunto suspendido"}
+    """
+    import logging
+    import re
+    logger = logging.getLogger(__name__)
+
+    tenant_id = payload.tenant_id.strip().lower()
+
+    # Validar formato UUID v4
+    if not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', tenant_id):
+        logger.warning("TENANT_LOGIN | formato_invalido | input=%s", tenant_id[:20])
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="UUID no válido o conjunto suspendido"
+        )
+
+    from app.db.database import SessionLocal
+    from app.models.tenant import Tenant
+
+    db = SessionLocal()
+    try:
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+
+        if not tenant:
+            logger.warning("TENANT_LOGIN | no_encontrado | id=%s", tenant_id[:8] + "...")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="UUID no válido o conjunto suspendido"
+            )
+
+        if tenant.estado != "ACTIVO":
+            logger.warning(
+                "TENANT_LOGIN | suspendido | id=%s | estado=%s",
+                tenant_id[:8] + "...", tenant.estado
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="UUID no válido o conjunto suspendido"
+            )
+
+        logger.info("TENANT_LOGIN | ok | id=%s | nombre=%s", tenant_id[:8] + "...", tenant.nombre)
+
+        return {
+            "valid": True,
+            "nombre": tenant.nombre,
+            "municipio": tenant.municipio
+        }
+
+    finally:
+        db.close()
 
 
 @router.get("/session-check")

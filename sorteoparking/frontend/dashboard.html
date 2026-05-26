@@ -14,7 +14,7 @@
     .hero-dashboard h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
     .hero-dashboard p { font-size: 17px; color: var(--ink-secondary); margin-top: 4px; }
 
-    .consejero-card {
+    .garante-card {
       background: var(--canvas-pearl);
       border: 1px solid var(--hairline-light);
       border-radius: var(--radius-lg);
@@ -22,7 +22,7 @@
       display: grid;
       gap: 10px;
     }
-    .consejero-card .num { font-size: 13px; font-weight: 500; color: var(--ink-tertiary); margin-bottom: 2px; }
+    .garante-card .num { font-size: 13px; font-weight: 500; color: var(--ink-tertiary); margin-bottom: 2px; }
 
     .status-box {
       background: var(--canvas-parchment);
@@ -159,12 +159,12 @@
       gap: 8px;
     }
 
-    .consejeros-2col {
+    .garantes-2col {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
-    @media (max-width: 640px) { .consejeros-2col { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) { .garantes-2col { grid-template-columns: 1fr; } }
 
     .divider-labeled {
       display: flex;
@@ -296,7 +296,7 @@
         <h2 class="card-title">Evento de sorteo</h2>
         <span class="badge badge-neutral">Paso 2</span>
       </div>
-      <p class="section-subtitle">Cargue la lista de elegibles, configure los 5 consejeros y ejecute el sorteo.</p>
+      <p class="section-subtitle">Cargue la lista de elegibles, configure los garantes y ejecute el sorteo.</p>
 
       <div class="input-group">
         <label class="input-label" for="st-token">UUID del conjunto</label>
@@ -317,9 +317,17 @@
         <input id="st-sorteo-id" class="input input-mono" type="number" min="1" placeholder="Se rellena al cargar el Excel" />
       </div>
 
-      <div class="divider-labeled">CONSEJEROS</div>
-      <p class="step-hint">Ingrese los nombres y correos de los 5 consejeros. Recibirán un OTP por email para aprobar el sorteo.</p>
-      <div id="st-consejeros" class="consejeros-2col"></div>
+      <div class="divider-labeled">GARANTES</div>
+      <div class="input-group">
+        <label class="input-label" for="st-num-garantes">Número de garantes</label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input id="st-num-garantes" type="range" min="3" max="10" value="5" style="flex:1;" />
+          <span id="st-num-garantes-label" style="font-size:17px;font-weight:600;min-width:28px;text-align:center;">5</span>
+        </div>
+        <p style="font-size:12px;color:var(--ink-tertiary);margin-top:4px;">Cada garante recibe un código OTP por email. Mínimo 3, máximo 10.</p>
+      </div>
+      <p class="step-hint">Ingrese los nombres y correos de los garantes. Recibirán un OTP por email para aprobar el sorteo.</p>
+      <div id="st-garantes" class="garantes-2col"></div>
 
       <div class="card-footer" style="margin-top: 16px;">
         <button type="button" id="st-iniciar" class="btn btn-primary btn-lg btn-block">
@@ -378,6 +386,18 @@
       }
     })();
 
+    // ── Login flow: read UUID from sessionStorage, redirect if missing ──
+    (function() {
+      const uuid = sessionStorage.getItem('sorteo_tenant_uuid');
+      if (uuid) {
+        document.getElementById('st-token').value = uuid;
+        document.getElementById('cat-token').value = uuid;
+      } else {
+        // No UUID in sessionStorage — redirect to login
+        window.location.href = '/static/login.html';
+      }
+    })();
+
     function showToast(msg, type) {
       const toast = document.createElement('div');
       toast.className = 'alert alert-' + type;
@@ -388,7 +408,11 @@
     }
 
     function checkAuth(r) {
-      if (r.status === 403) { window.location.href = '/static/superadmin.html'; return true; }
+      if (r.status === 403) {
+        sessionStorage.removeItem('sorteo_tenant_uuid');
+        window.location.href = '/static/login.html';
+        return true;
+      }
       return false;
     }
 
@@ -445,17 +469,33 @@
 
     // Sorteo
     (function () {
-      const box = document.getElementById('st-consejeros');
-      for (let i = 1; i <= 5; i++) {
-        const d = document.createElement('div'); d.className = 'consejero-card';
-        d.innerHTML = '<div class="num">Consejero ' + i + '</div>' +
-          '<input data-c="nombre" class="input" placeholder="Nombre" />' +
-          '<input data-c="email" class="input" placeholder="Email" type="email" required />';
-        box.appendChild(d);
+      const box = document.getElementById('st-garantes');
+      const numSlider = document.getElementById('st-num-garantes');
+      const numLabel = document.getElementById('st-num-garantes-label');
+
+      function generarCardsGarantes(cantidad) {
+        box.innerHTML = '';
+        for (let i = 1; i <= cantidad; i++) {
+          const d = document.createElement('div'); d.className = 'garante-card';
+          d.innerHTML = '<div class="num">Garante ' + i + '</div>' +
+            '<input data-c="nombre" class="input" placeholder="Nombre" />' +
+            '<input data-c="email" class="input" placeholder="Email" type="email" required />';
+          box.appendChild(d);
+        }
       }
 
-      function leerConsejeros() {
-        return Array.from(box.querySelectorAll('.consejero-card')).map(g => ({
+      // Initial: read from slider
+      generarCardsGarantes(parseInt(numSlider.value, 10));
+
+      // On slider change: regenerate cards
+      numSlider.addEventListener('input', function() {
+        const n = parseInt(this.value, 10);
+        numLabel.textContent = n;
+        generarCardsGarantes(n);
+      });
+
+      function leerGarantes() {
+        return Array.from(box.querySelectorAll('.garante-card')).map(g => ({
           nombre: g.querySelector('[data-c=nombre]').value.trim(),
           email: g.querySelector('[data-c=email]').value.trim(),
         }));
@@ -489,16 +529,16 @@
         const out = document.getElementById('st-out');
         if (!token) { out.textContent = 'Ingrese el UUID del conjunto.'; return; }
         if (!sid) { out.textContent = 'Indique sorteo_id.'; return; }
-        const consejeros = leerConsejeros();
+        const garantes = leerGarantes();
         out.textContent = 'Iniciando...';
         try {
           const res = await fetch('/sorteos/iniciar', { method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'X-CSRF-Token': getCookie('csrf_token') || '' },
-            body: JSON.stringify({ sorteo_id: sid, consejeros }) });
+            body: JSON.stringify({ sorteo_id: sid, num_garantes: parseInt(document.getElementById("st-num-garantes").value, 10), garantes }) });
           if (checkAuth(res)) return;
           const data = await res.json().catch(() => ({}));
           out.textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
-          if (res.ok) { startPollIfSid(); showToast('OTPs enviados a los consejeros', 'success'); }
+          if (res.ok) { startPollIfSid(); showToast('OTPs enviados a los garantes', 'success'); }
         } catch (e) { out.textContent = 'Error: ' + e.message; }
       });
 
@@ -539,7 +579,7 @@
 
           const listo = o.total > 0 && o.confirmados === o.total;
           document.getElementById('st-otp').textContent = 'OTP ' + (o.confirmados || 0) + '/' + (o.total || 0) +
-            (listo ? ' — LISTO (listo para ejecutar)' : '') + ' — ' + JSON.stringify(o.consejeros || []);
+            (listo ? ' — LISTO (listo para ejecutar)' : '') + ' — ' + JSON.stringify(o.garantes || []);
 
           document.getElementById('st-sorteo-estado').textContent = rEst.ok ? 'Estado: ' + e.estado + (e.seed ? ' - Seed asignado' : '') : 'Estado error HTTP ' + rEst.status;
           const seedEl = document.getElementById('st-seed');
@@ -649,9 +689,11 @@
       });
 
       document.getElementById('logout-btn').addEventListener('click', () => {
+        sessionStorage.removeItem('sorteo_tenant_uuid');
+        sessionStorage.removeItem('sorteo_tenant_nombre');
         document.cookie = 'admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
         document.cookie = 'csrf_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-        window.location.href = '/static/superadmin.html';
+        window.location.href = '/static/login.html';
       });
     })();
   </script>

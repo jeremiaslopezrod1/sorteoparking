@@ -123,7 +123,7 @@
         <path d="M10 16h12M10 21h8"/>
       </svg>
       <h1 id="conjunto-nombre">SorteoParking</h1>
-      <p id="consejero-nombre">Consejero</p>
+      <p id="garante-nombre">Garante</p>
     </div>
 
     <!-- Loading state inicial -->
@@ -145,13 +145,13 @@
     <!-- OTP Input State -->
     <div id="otp-state" style="display:none;">
       <!-- Progress bar -->
-      <p class="otp-progress-label" id="progress-label">Consejeros confirmados: 0/5</p>
+      <p class="otp-progress-label" id="progress-label">Garantes confirmados: 0/5</p>
       <div class="otp-progress" style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:24px;">
         <div class="otp-progress-bar" id="progress-bar" style="width:0%"></div>
       </div>
 
       <!-- Cards -->
-      <div class="otp-cards" id="consejeros-cards"></div>
+      <div class="otp-cards" id="garantes-cards"></div>
 
       <!-- OTP digits -->
       <div class="otp-input-area" id="otp-input-area">
@@ -179,7 +179,7 @@
           <path d="M6 12l4 4 8-8"/>
         </svg>
       </div>
-      <p class="otp-all-confirmed-text">Todos los consejeros confirmaron</p>
+      <p class="otp-all-confirmed-text">Todos los garantes confirmaron</p>
       <p class="otp-all-confirmed-sub">El sorteo se ejecutará automáticamente. Recibirá una notificación con los resultados.</p>
     </div>
   </div>
@@ -287,16 +287,16 @@
           // Update progress
           const confirmados = data.confirmados || 0;
           const total = data.total || 5;
-          document.getElementById('progress-label').textContent = 'Consejeros confirmados: ' + confirmados + '/' + total;
+          document.getElementById('progress-label').textContent = 'Garantes confirmados: ' + confirmados + '/' + total;
           document.getElementById('progress-bar').style.width = (confirmados / total * 100) + '%';
           if (confirmados === total && total > 0) {
             document.getElementById('progress-bar').classList.add('complete');
           }
 
           // Cards
-          const cardsContainer = document.getElementById('consejeros-cards');
-          if (data.consejeros) {
-            cardsContainer.innerHTML = data.consejeros.map(c => `
+          const cardsContainer = document.getElementById('garantes-cards');
+          if (data.garantes) {
+            cardsContainer.innerHTML = data.garantes.map(c => `
               <div class="otp-card ${c.estado === 'CONFIRMADO' ? 'confirmed' : c.estado === 'EXPIRADO' ? 'expired' : ''}">
                 <div class="otp-card-name">${escHtml(c.nombre)}</div>
                 <div class="otp-card-status">
@@ -310,7 +310,7 @@
             `).join('');
           }
 
-          // Check if current consejero already confirmed
+          // Check if current garante already confirmed
           console.log('OTP mi_estado check:', data.mi_estado, data.mi_estado === 'CONFIRMADO');
           if (data.mi_estado === 'CONFIRMADO') {
             otpStateEl.innerHTML = `
@@ -419,7 +419,7 @@
                   </svg>
                 </div>
                 <p class="otp-all-confirmed-text">OTP confirmado exitosamente</p>
-                <p class="otp-all-confirmed-sub">Espere mientras los demás consejeros confirman.</p>
+                <p class="otp-all-confirmed-sub">Espere mientras los demás garantes confirman.</p>
               </div>
             `;
             clearInterval(fetchTimer);
