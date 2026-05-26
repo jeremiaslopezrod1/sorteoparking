@@ -52,11 +52,15 @@ index.html (landing público)
                                                                         ├─ Resultados públicos
                                                                         └─ Acta descargable
 
-superadmin.html (login con usuario/contraseña + TOTP)
+superadmin.html (solo dashboard — login separado en login_superadmin.html)
   ├─ CRUD de conjuntos (crear, editar, eliminar, rotar token)
   ├─ Dashboard con métricas globales
   ├─ Visor de logs de auditoría (filtrables, paginados)
   └─ Backup manual
+
+login_superadmin.html (público, formulario de login SUPER_ADMIN)
+  └─ Ingresa credenciales → redirect a superadmin.html
+  └─ Enlace a reset-password.html
 ```
 
 ---
@@ -106,6 +110,7 @@ sorteoparking/
 ├── frontend/
 │   ├── index.html                      # Landing page (Apple Design System)
 │   ├── login.html                      # Login de TENANT_ADMIN con UUID
+│   ├── login_superadmin.html           # Login de SUPER_ADMIN (público)
 │   ├── reset-password.html             # Recuperación de contraseña SUPER_ADMIN
 │   ├── dashboard.html                  # Panel TENANT_ADMIN (catálogo + sorteo)
 │   ├── otp_panel.html                  # Panel OTP para garantes (dark theme)
@@ -127,7 +132,7 @@ sorteoparking/
 
 | Método | Endpoint | Auth | Descripción |
 |---|---|---|---|
-| POST | `/auth/login/superadmin` | — ⭐ | Login SUPER_ADMIN (con TOTP en producción) |
+| POST | `/auth/login/superadmin` | — ⭐ | Login SUPER_ADMIN (TOTP solo si configurado en producción) |
 | POST | `/auth/logout` | Cookie | Cerrar sesión SUPER_ADMIN |
 | POST | `/auth/login/tenant` | — ⭐ | Login TENANT_ADMIN con UUID del conjunto |
 | POST | `/auth/superadmin/recuperar-password` | — ⭐ | Solicitar reset de contraseña |
@@ -195,7 +200,7 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
   - `superadmin.html` → requiere sesión activa con cookie HttpOnly
   - `otp_panel.html` → público sin datos sensibles sin token_enlace
   - `login.html` → público
-- **2FA TOTP** para SUPER_ADMIN en producción (via pyotp)
+- **2FA TOTP** para SUPER_ADMIN en producción (via pyotp, campo oculto por defecto — se activa configurando `SUPER_ADMIN_TOTP_SECRET`)
 - **Rate limiting** por IP en todos los endpoints de autenticación
 - **Auditoría encadenada** con hash SHA-256 (todos los eventos de SUPER_ADMIN)
 - **Recuperación de contraseña** por correo con token de un solo uso
@@ -217,7 +222,7 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
 | `SUPER_ADMIN_PASSWORD_HASH` | ✅ | Hash Argon2id de la contraseña admin |
 | `SUPER_ADMIN_TOKEN` | ✅ | Token Bearer del SUPER_ADMIN |
 | `SUPER_ADMIN_EMAIL` | ✅* | Email para recuperación de contraseña y alertas |
-| `SUPER_ADMIN_TOTP_SECRET` | ❓ | Secreto TOTP para 2FA (solo producción) |
+| `SUPER_ADMIN_TOTP_SECRET` | ❓ | Secreto TOTP para 2FA (solo producción). El campo TOTP en login_superadmin.html está oculto por defecto; al configurarlo, cambiar `display:none` → `display:block` en el HTML |
 | `BACKUP_DIR` | ❓ | Directorio de backups (`/data/backups`) |
 | `BACKUP_RETENTION_DAYS` | ❓ | Días de retención de backups (30) |
 
