@@ -43,6 +43,7 @@
 | C-21 | Seguridad | 2FA para SUPER_ADMIN | H-21 |
 | C-22 | Seguridad | Audit trail de accesos SUPER_ADMIN | H-22 |
 | C-23 | Seguridad | Política de acceso server-side a paneles HTML | H-24 |
+| **C-24** | **Bug (Arquitectura)** | **Login SUPER_ADMIN separado: login_superadmin.html + superadmin.html** | **H-25** |
 
 ---
 
@@ -141,6 +142,7 @@ sorteoparking/
 ├── frontend/
 │   ├── index.html ← NUEVO v2.1 (Apple Design System)
 │   ├── login.html ← NUEVO v2.1 (Login TENANT_ADMIN con UUID)
+│   ├── login_superadmin.html ← NUEVO v2.1 (Login SUPER_ADMIN, público)
 │   ├── dashboard.html, otp_panel.html, publico.html, superadmin.html
 ├── DESIGN.md ← Apple Design System
 ├── apple/DESIGN.md
@@ -169,10 +171,11 @@ Origen: `https://sorteoparking.onrender.com`. Credentials, métodos y headers pe
 |---|---|---|
 | `index.html` | Público | — |
 | `login.html` | Público | Redirect a `dashboard.html` si UUID válido |
+| `login_superadmin.html` | Público | — (formulario de login; dashboard protegido aparte) |
 | `publico.html` | Público | — |
 | `otp_panel.html` | Solo con `token_enlace` válido | Redirect a `index.html` |
 | `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
-| `superadmin.html` | Solo con sesión SUPER_ADMIN activa | HTTP 401 |
+| `superadmin.html` | Solo con sesión SUPER_ADMIN activa | HTTP 401 (solo dashboard, login separado) |
 
 #### 3.5.4 SecurityHeadersMiddleware
 
@@ -510,6 +513,31 @@ Body: {"tenant_id": "<uuid>"}
 
 La validación verifica: UUID existe en tabla `tenants` y `estado = ACTIVO`. No expone información sensible.
 
+### 10.2.2 login_superadmin.html — Login SUPER_ADMIN (NUEVO v2.1)
+
+Página pública con Apple Design System. Contiene únicamente el formulario de login
+(usuario, contraseña, campo TOTP opcional). Está SEPARADA de `superadmin.html`
+para evitar el bloqueo server-side: el formulario debe ser accesible sin sesión.
+
+**Razonamiento:**
+`superadmin.html` está protegido por `get_super_admin_from_cookie()` en main.py
+(T-314). Si el formulario de login estuviera en el mismo archivo, el servidor lo
+bloquearía antes de que el navegador pudiera renderizarlo — un problema
+huevo-gallina. La solución es dos archivos:
+
+- `login_superadmin.html` → público, solo el formulario
+- `superadmin.html` → protegido, solo el dashboard
+
+**Flujo:**
+
+1. Usuario entra a `login_superadmin.html` (público, servido por StaticFiles)
+2. Ingresa credenciales + TOTP (si aplica)
+3. Login exitoso → servidor setea cookies → redirect a `superadmin.html`
+4. `superadmin.html` valida cookies server-side → sirve el dashboard
+5. Login fallido → mensaje de error en `login_superadmin.html`
+6. Enlace a recuperación de contraseña → `reset-password.html`
+7. Enlace de volver → `index.html`
+
 ### 10.3 Responsividad (v2.1)
 
 Breakpoints Apple: < 768px mobile (1 columna), 768–1024px tablet (2 columnas), > 1024px desktop (layout completo). Paneles: index, dashboard, otp_panel, publico, superadmin.
@@ -524,6 +552,9 @@ Spinner "Ejecutando sorteo..." → fade-in progresivo de resultados en parte sup
 |---|---|---|
 | `index.html` → "Acceder" | `login.html` | Navegación |
 | `login.html` (UUID válido) | `dashboard.html` | Redirect con UUID en sessionStorage |
+| `index.html` → "Admin" (oculto) | `login_superadmin.html` | Navegación |
+| `login_superadmin.html` (login ok) | `superadmin.html` | Redirect con cookie de sesión |
+| `login_superadmin.html` → "¿Olvidó su contraseña?" | `reset-password.html` | Navegación |
 | `superadmin.html` | `dashboard.html` | Botón "Dashboard" por tenant |
 | `dashboard.html` | Vista pública | Botón post-ejecución |
 | `dashboard.html` | `superadmin.html` | Botón "Volver" |
@@ -724,6 +755,7 @@ T-101 a T-122 y T-201 a T-211 (✅). Ver SDD v2.0.
 | T-316 | 2FA TOTP SUPER_ADMIN | CA-39 | ✅ |
 | T-317 | Audit trail SUPER_ADMIN | CA-40 | ✅ |
 | T-321 | Pantalla login TENANT_ADMIN (login.html + POST /auth/login/tenant) | CA-46 | ✅ |
+| **T-322** | **Separar login SUPER_ADMIN: login_superadmin.html público + superadmin.html protegido** | **CA-42** | **✅** |
 
 #### Bloque E — Infraestructura
 
