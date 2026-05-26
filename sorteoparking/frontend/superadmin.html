@@ -351,12 +351,10 @@
       e.preventDefault();
       const user = document.getElementById('username').value.trim();
       const pass = document.getElementById('password').value;
-      const totp = document.getElementById('totp-code').value.trim();
       const errEl = document.getElementById('login-error');
       document.getElementById('login-btn').disabled = true;
 
       const body = { username: user, password: pass };
-      if (totp) { body.totp_code = totp; }
 
       try {
         const res = await fetch('/auth/login/superadmin', {
