@@ -216,16 +216,6 @@ async def serve_dashboard(request: Request):
     return FileResponse(path=_frontend_dir / "dashboard.html")
 
 
-@app.get("/static/superadmin.html")
-async def serve_superadmin(request: Request):
-    """Sirve superadmin.html solo si hay cookie admin_session valida."""
-    try:
-        get_super_admin_from_cookie(request)
-        return FileResponse(path=_frontend_dir / "superadmin.html")
-    except HTTPException:
-        return Response(status_code=401, content="No autorizado")
-
-
 if _frontend_dir.is_dir():
-    # StaticFiles sirve el resto: CSS, JS, imagenes, index.html, publico.html, otp_panel.html
+    # StaticFiles sirve el resto: CSS, JS, imagenes, index.html, login_superadmin.html, publico.html, otp_panel.html, superadmin.html
     app.mount("/static", StaticFiles(directory=str(_frontend_dir)), name="static")

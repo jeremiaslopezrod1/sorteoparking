@@ -175,7 +175,7 @@ Origen: `https://sorteoparking.onrender.com`. Credentials, métodos y headers pe
 | `publico.html` | Público | — |
 | `otp_panel.html` | Solo con `token_enlace` válido | Redirect a `index.html` |
 | `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
-| `superadmin.html` | Solo con sesión SUPER_ADMIN activa | HTTP 401 (solo dashboard, login separado) |
+| `superadmin.html` | Público (sin datos sensibles — HTML vacío, datos vía APIs protegidas) | — |
 
 #### 3.5.4 SecurityHeadersMiddleware
 

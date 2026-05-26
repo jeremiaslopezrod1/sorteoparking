@@ -195,11 +195,11 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
 
 ## Características de seguridad
 
-- **Política de acceso server-side a paneles HTML:**
-  - `dashboard.html` → requiere Bearer UUID válido
-  - `superadmin.html` → requiere sesión activa con cookie HttpOnly
+- **Política de acceso a paneles HTML:**
+  - `dashboard.html` → requiere Bearer UUID válido (server-side)
+  - `superadmin.html` → público (HTML sin datos; APIs protegidas con cookie de sesión)
   - `otp_panel.html` → público sin datos sensibles sin token_enlace
-  - `login.html` → público
+  - `login.html`, `login_superadmin.html` → público
 - **2FA TOTP** para SUPER_ADMIN en producción (via pyotp, campo oculto por defecto — se activa configurando `SUPER_ADMIN_TOTP_SECRET`)
 - **Rate limiting** por IP en todos los endpoints de autenticación
 - **Auditoría encadenada** con hash SHA-256 (todos los eventos de SUPER_ADMIN)
