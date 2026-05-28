@@ -49,8 +49,9 @@ def _super_admin_bearer(request: Request):
     session_id = request.cookies.get("admin_session")
     if not session_id:
         _log.warning(
-            "AUTH_FAIL | code=A1 | path=%s | cookies_enviadas=%s",
-            request.url.path, cookies_list
+            "AUTH_FAIL | code=A1 | path=%s | method=%s | cookies_enviadas=%s | auth_header=%s",
+            request.url.path, request.method, cookies_list,
+            request.headers.get("Authorization", "")[:40]
         )
         raise HTTPException(status_code=403, detail="[A1] Sin cookie admin_session")
 

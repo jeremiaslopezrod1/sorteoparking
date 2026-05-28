@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import security_config, super_admin_config
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class AuthContext:
@@ -63,6 +65,12 @@ def get_auth_context(request: Request) -> AuthContext:
 
     auth_header = request.headers.get(security_config.auth_header_name, "")
     if not auth_header.startswith(security_config.bearer_prefix):
+        logger.warning(
+            "GET_AUTH_CONTEXT | path=%s | method=%s | header_presente=%s | header_prefix=%s | cookies=%s",
+            request.url.path, request.method,
+            bool(auth_header), auth_header[:15] if auth_header else "(vacio)",
+            list(request.cookies.keys())
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Falta Authorization Bearer",
@@ -70,6 +78,10 @@ def get_auth_context(request: Request) -> AuthContext:
 
     raw_token = auth_header.removeprefix(security_config.bearer_prefix).strip()
     if not raw_token:
+        logger.warning(
+            "GET_AUTH_CONTEXT | path=%s | token_vacio | header_content=%s",
+            request.url.path, auth_header[:30]
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token vacio",

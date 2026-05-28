@@ -65,8 +65,17 @@ async def tenant_auth_middleware(request: Request, call_next):
         detail = getattr(exc, "detail", "No autorizado")
         exc_type = type(exc).__name__
         logger.warning(
-            "AUTH_MIDDLEWARE_ERROR | path=%s | exc_type=%s | status=%s | detail=%s",
-            request.url.path, exc_type, status_code, str(detail)[:100]
+            "AUTH_MIDDLEWARE_ERROR | path=%s | method=%s | exc_type=%s | status=%s | detail=%s",
+            request.url.path, request.method, exc_type, status_code, str(detail)[:100]
+        )
+        # DIAGNÓSTICO: qué headers llegaron
+        auth_header = request.headers.get("Authorization", "")[:50]
+        cookies_presentes = list(request.cookies.keys())
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+        logger.warning(
+            "AUTH_MIDDLEWARE_DIAG | path=%s | auth_header_prefix=%s | cookies=%s | scheme=%s | fwd_proto=%s",
+            request.url.path, auth_header[:20] if auth_header else "(vacio)",
+            cookies_presentes, request.url.scheme, forwarded_proto
         )
         response = JSONResponse(status_code=status_code, content={"detail": detail})
         response.headers["X-Auth-Path"] = "middleware_catch"
