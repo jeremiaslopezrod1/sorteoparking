@@ -141,18 +141,25 @@
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify(body),
+          redirect: 'follow',  // Sigue automáticamente el 303 redirect
         });
-        const data = await res.json();
-        if (res.ok) {
-          _csrfToken = data.csrf_token;
-          await new Promise(r => setTimeout(r, 1000));
-          window.location.href = '/static/superadmin.html?fresh=1';
-        } else {
+        
+        // Si el fetch sigue el redirect (status 303), el navegador navega automáticamente
+        // Si no (error antes del redirect), mostramos el error
+        if (res.ok && res.url.includes('/static/superadmin.html')) {
+          // Redirect exitoso fue seguido automáticamente
+          return;
+        } else if (res.status === 401 || res.status === 403) {
+          const data = await res.json();
           errEl.textContent = data.detail || 'Credenciales incorrectas';
           errEl.className = 'login-error visible';
           document.getElementById('login-btn').disabled = false;
           document.getElementById('password').value = '';
           document.getElementById('username').focus();
+        } else {
+          errEl.textContent = 'Error de conexión';
+          errEl.className = 'login-error visible';
+          document.getElementById('login-btn').disabled = false;
         }
       } catch(e) {
         errEl.textContent = 'Error de conexión';
