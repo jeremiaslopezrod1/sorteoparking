@@ -228,7 +228,10 @@ async def serve_dashboard(request: Request):
 @app.get("/static/superadmin.html")
 async def serve_superadmin(request: Request):
     """Sirve superadmin.html solo si tiene sesión activa (cookie admin_session válida)."""
-    get_super_admin_from_cookie(request)  # Lanza HTTPException 403 si no hay sesión válida
+    try:
+        get_super_admin_from_cookie(request)
+    except HTTPException:
+        return Response(status_code=403, content="No autorizado")
     return FileResponse(path=_frontend_dir / "superadmin.html")
 
 
