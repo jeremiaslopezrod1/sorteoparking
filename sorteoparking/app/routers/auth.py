@@ -212,7 +212,7 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
         path="/"
     )
 
-    # 8. T-317: Audit trail de login exitoso + devolver respuesta
+    # 8. T-317: Audit trail de login exitoso
     db_audit = SessionLocal()
     try:
         registrar_log_auditoria(
@@ -225,11 +225,33 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     finally:
         db_audit.close()
 
-    return {
-        "ok": True,
-        "csrf_token": csrf_token,
-        "expires_in": 3600
-    }
+    # 9. Redirect 303 (See Other) para que el navegador procese las cookies antes de navegar
+    # Las cookies ya están en la response, el 303 hace que el navegador las persista
+    # y luego siga el redirect a superadmin.html con las cookies en el siguiente GET
+    from fastapi.responses import RedirectResponse
+    response = RedirectResponse(url="/static/superadmin.html", status_code=status.HTTP_303_SEE_OTHER)
+    
+    # Re-aplicar las cookies a la response de redirect (importante para que persistan)
+    response.set_cookie(
+        key="admin_session",
+        value=session_id,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=3600,
+        path="/"
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        httponly=False,
+        secure=is_secure,
+        samesite="lax",
+        max_age=3600,
+        path="/"
+    )
+    
+    return response
 
 
 # ── T-321: LOGIN TENANT_ADMIN (UUID) ────────────────────────────────
@@ -542,144 +564,4 @@ async def reset_password(request: Request, payload: ResetPasswordRequest):
 superadmin_reset_router = APIRouter(prefix="", tags=["superadmin-reset"])
 
 
-@superadmin_reset_router.post("/superadmin/recuperar-password", status_code=status.HTTP_200_OK)
-@limiter.limit("3/15minutes")
-async def superadmin_recuperar_password(request: Request, payload: RecuperarPasswordIn):
-    """T-315: Solicita recuperación de contraseña SUPER_ADMIN por correo.
-
-    Verifica email contra config, genera token UUID, lo hashea (SHA-256),
-    guarda PasswordResetToken en DB con expiración 30 min, envía correo
-    con enviar_reset_password(), y audita PASSWORD_RESET_SOLICITADO.
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-
-    email = payload.email.strip().lower()
-    admin_email = super_admin_config.super_admin_email.strip().lower()
-
-    if email != admin_email:
-        logger.warning("SUPERADMIN_RECUPERAR | email_no_coincide | %s", email[:3] + "***")
-        await asyncio.sleep(random.uniform(0.2, 0.4))
-        return {
-            "ok": True,
-            "message": "Si el correo existe, se enviaron instrucciones."
-        }
-
-    db = SessionLocal()
-    try:
-        token_plano = PasswordResetToken.generar(email, db)
-
-        base_url = public_urls_config.public_base_url.rstrip("/")
-        reset_url = f"{base_url}/static/reset-password.html?token={token_plano}"
-
-        enviado = enviar_reset_password(email, reset_url)
-        if not enviado:
-            logger.error("SUPERADMIN_RECUPERAR | email_fallo_envio")
-
-        # Audit PASSWORD_RESET_SOLICITADO
-        db_audit = SessionLocal()
-        try:
-            registrar_log_auditoria(
-                db_audit, "SUPER_ADMIN", "PASSWORD_RESET_SOLICITADO",
-                f"email={email[:3]}***"
-            )
-            db_audit.commit()
-        except Exception:
-            logger.exception("AUDIT PASSWORD_RESET_SOLICITADO")
-        finally:
-            db_audit.close()
-
-    except Exception as e:
-        logger.exception("SUPERADMIN_RECUPERAR | error=%s", e)
-    finally:
-        db.close()
-
-    return {
-        "ok": True,
-        "message": "Si el correo existe, se enviaron instrucciones."
-    }
-
-
-@superadmin_reset_router.post("/superadmin/reset-password", status_code=status.HTTP_200_OK)
-@limiter.limit("5/15minutes")
-async def superadmin_reset_password(request: Request, payload: ResetPasswordIn):
-    """T-315: Restablece contraseña SUPER_ADMIN con token de recuperación.
-
-    Hashea token recibido (SHA-256), busca en DB, verifica no expirado ni usado,
-    genera nuevo hash Argon2id, actualiza en tabla superadmin_credentials,
-    marca token como usado, invalida sesiones activas, audita PASSWORD_RESET_APLICADO.
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-
-    logger.warning("SUPERADMIN_RESET | token_prefix=%s", payload.token[:8] + "...")
-
-    db = SessionLocal()
-    try:
-        email = PasswordResetToken.validar(payload.token, db)
-        if not email:
-            logger.warning("SUPERADMIN_RESET | token_invalido_o_expirado")
-            await asyncio.sleep(random.uniform(0.2, 0.4))
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Token invalido o expirado"
-            )
-
-        logger.warning("SUPERADMIN_RESET | token_valido | email=%s", email[:3] + "***")
-
-        # Generar nuevo hash Argon2id
-        new_hash = ph.hash(payload.new_password)
-
-        # Actualizar en BD
-        SuperAdminCredentials.guardar_o_actualizar(email, new_hash, db)
-        logger.warning("SUPERADMIN_RESET | password_hash_actualizado")
-
-        # Marcar token como usado (PasswordResetToken.validar ya lo marca, pero
-        # invalidamos cualquier otro token pendiente)
-        db.query(PasswordResetToken).filter(
-            PasswordResetToken.used_at.is_(None)
-        ).update({"used_at": datetime.now(timezone.utc)})
-        db.commit()
-        logger.warning("SUPERADMIN_RESET | tokens_restantes_invalidados")
-
-        # Invalidar TODAS las sesiones admin activas
-        try:
-            from app.core.session_store import AdminSession
-            db.query(AdminSession).filter(
-                AdminSession.revoked_at.is_(None)
-            ).update({"revoked_at": datetime.now(timezone.utc)})
-            db.commit()
-            logger.warning("SUPERADMIN_RESET | todas_sesiones_invalidadas")
-        except Exception as e:
-            logger.error("SUPERADMIN_RESET | error_invalidando_sesiones: %s", e)
-
-        # Audit PASSWORD_RESET_APLICADO
-        db_audit = SessionLocal()
-        try:
-            registrar_log_auditoria(
-                db_audit, "SUPER_ADMIN", "PASSWORD_RESET_APLICADO",
-                f"email={email[:3]}***"
-            )
-            db_audit.commit()
-        except Exception:
-            logger.exception("AUDIT PASSWORD_RESET_APLICADO")
-        finally:
-            db_audit.close()
-
-        return {
-            "ok": True,
-            "message": "Contraseña actualizada correctamente. Todas las sesiones han sido cerradas."
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("SUPERADMIN_RESET | error=%s", e)
-        if db:
-            db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno al restablecer contraseña"
-        )
-    finally:
-        db.close()
+@superadmin_reset_router.post("/superadmin/recuperar-password", status_code=statu
