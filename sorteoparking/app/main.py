@@ -224,14 +224,6 @@ app.include_router(superadmin_reset_router)
 _frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
 
-@app.get("/static/dashboard.html")
-async def serve_dashboard(request: Request):
-    """Sirve dashboard.html solo si el request tiene Bearer token valido."""
-    auth_ctx = get_auth_context(request)
-    if not auth_ctx.tenant_id:
-        return Response(status_code=401, content="No autorizado")
-    return FileResponse(path=_frontend_dir / "dashboard.html")
-
 
 @app.get("/static/superadmin.html")
 async def serve_superadmin(request: Request):
@@ -244,5 +236,6 @@ async def serve_superadmin(request: Request):
 
 
 if _frontend_dir.is_dir():
-    # StaticFiles sirve el resto: CSS, JS, imagenes, index.html, login_superadmin.html, publico.html, otp_panel.html, superadmin.html
+    # StaticFiles sirve CSS, JS, imagenes y todos los HTML publicos
+    # dashboard.html es publico (sin datos sensibles); las APIs se protegen con Bearer. El JS redirige si no hay UUID.
     app.mount("/static", StaticFiles(directory=str(_frontend_dir)), name="static")

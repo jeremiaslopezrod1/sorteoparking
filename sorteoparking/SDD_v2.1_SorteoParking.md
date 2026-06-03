@@ -174,8 +174,12 @@ Origen: `https://sorteoparking.onrender.com`. Credentials, métodos y headers pe
 | `login_superadmin.html` | Público | — (formulario de login; dashboard protegido aparte) |
 | `publico.html` | Público | — |
 | `otp_panel.html` | Solo con `token_enlace` válido | Redirect a `index.html` |
-| `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
+| `dashboard.html` | Público | — |
 | `superadmin.html` | Público (sin datos sensibles — HTML vacío, datos vía APIs protegidas) | — |
+
+> **Nota sobre `dashboard.html`:** El documento HTML no contiene información sensible y puede servirse sin autenticación.
+> La protección se realiza exclusivamente en las APIs consumidas por el dashboard, las cuales requieren `Authorization: Bearer <tenant_uuid>`.
+> Si no existe un UUID válido en `sessionStorage`, el frontend redirige automáticamente a `login.html`.
 
 #### 3.5.4 SecurityHeadersMiddleware
 

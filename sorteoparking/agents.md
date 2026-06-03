@@ -141,10 +141,11 @@ No crear carpetas ni archivos fuera de esta estructura sin actualizar el SDD pri
 | `index.html` | Público | — |
 | `publico.html` | Público | — |
 | `otp_panel.html` | Solo con `token_enlace` válido en URL | Redirect a `index.html` |
-| `dashboard.html` | Solo con Bearer UUID válido | HTTP 401 |
-| `superadmin.html` | Solo con sesión SUPER_ADMIN activa | HTTP 401 |
+| `dashboard.html` | Público | — (HTML sin datos sensibles; APIs protegidas con Bearer. JS redirige a login si no hay UUID en sessionStorage) |
+| `superadmin.html` | Público | — (HTML vacío; APIs protegidas con cookie de sesión) |
 
-El servidor valida autenticación **antes** de servir el HTML. No es suficiente validar solo en las llamadas a la API.
+> La protección de `dashboard.html` está en las APIs, no en el HTML. El servidor no bloquea el HTML;
+> el frontend se encarga de redirigir si no hay credenciales válidas.
 
 ---
 

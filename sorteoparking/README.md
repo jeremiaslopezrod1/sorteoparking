@@ -196,8 +196,8 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
 ## Características de seguridad
 
 - **Política de acceso a paneles HTML:**
-  - `dashboard.html` → requiere Bearer UUID válido (server-side)
-  - `superadmin.html` → público (HTML sin datos; APIs protegidas con cookie de sesión)
+  - `dashboard.html` → público (HTML sin datos sensibles; APIs protegidas con Bearer. JS redirige a login si no hay UUID en sessionStorage)
+  - `superadmin.html` → público (HTML vacío; APIs protegidas con cookie de sesión)
   - `otp_panel.html` → público sin datos sensibles sin token_enlace
   - `login.html`, `login_superadmin.html` → público
 - **2FA TOTP** para SUPER_ADMIN en producción (via pyotp, campo oculto por defecto — se activa configurando `SUPER_ADMIN_TOTP_SECRET`)
@@ -234,8 +234,8 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
 
 **v2.1 completada — 100% de las tareas implementadas.**
 
-> **4 Jun 2026:** Fix accesos a paneles — `/static/dashboard.html` ya no es tratado como ruta pública.
-> La protección server-side ahora funciona correctamente (401 sin Bearer token válido).
+> **4 Jun 2026:** Fix acceso a paneles — `dashboard.html` ahora es público (HTML sin datos sensibles).
+> La protección se mueve a las APIs (Bearer). Coincide con la arquitectura de `superadmin.html`.
 
 | Bloque | Tareas | Estado |
 |---|---|---|
