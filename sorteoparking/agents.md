@@ -22,6 +22,19 @@ mobile-first con breakpoints Apple.
 
 ---
 
+## Política de optimización de tokens
+
+1. **Leer `openclaw.json` antes de cualquier tarea** para conocer módulos y contextos disponibles.
+2. **Identificar el módulo** afectado (routers, services, frontend, etc.).
+3. **Cargar únicamente `module_contexts`** del módulo relevante — no archivos aledaños.
+4. **Cargar `module_dependencies` solo si son estrictamente necesarias** para la tarea.
+5. **Nunca escanear el repositorio completo.**
+6. **Nunca cargar más de 10 archivos sin justificación explícita.**
+7. **Priorizar minimal diff** — un cambio a la vez, un archivo a la vez.
+8. **Reutilizar contexto ya cargado** — no recargar archivos que ya están en memoria.
+
+---
+
 ## Stack — no negociable
 
 | Capa | Tecnología | Restricción |
