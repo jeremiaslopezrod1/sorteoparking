@@ -26,12 +26,47 @@ from app.core.session_store import session_store
 from app.db.database import SessionLocal
 from app.models.superadmin import PasswordResetToken
 from app.models.password_reset import SuperAdminCredentials
+from app.models.tenant import Tenant
 from app.services.email_service import enviar_reset_password
 from app.services.log_service import registrar_log_auditoria
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=_get_client_ip)
 ph = PasswordHasher()
+
+
+def _registrar_log_superadmin_seguro(evento: str, payload: str | None = None) -> None:
+    """Registra auditoría SUPER_ADMIN solo si existe un tenant técnico válido."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    db_audit = SessionLocal()
+    try:
+        tenant_tecnico = (
+            db_audit.query(Tenant.id)
+            .filter(Tenant.id == "SUPER_ADMIN")
+            .first()
+        )
+        if not tenant_tecnico:
+            logger.warning(
+                "SUPERADMIN_AUDIT_SKIPPED | evento=%s | reason=tenant_tecnico_no_existe",
+                evento,
+            )
+            return
+
+        registrar_log_auditoria(db_audit, "SUPER_ADMIN", evento, payload)
+        db_audit.commit()
+    except Exception as exc:
+        db_audit.rollback()
+        logger.warning(
+            "SUPERADMIN_AUDIT_ERROR | evento=%s | exc_type=%s | detail=%s",
+            evento,
+            type(exc).__name__,
+            str(exc)[:200],
+        )
+    finally:
+        db_audit.close()
+
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=4, max_length=50)
@@ -104,17 +139,10 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     if not user_ok or not password_ok or not stored_token:
         # T-317: Audit trail de login fallido
         client_ip = _get_client_ip(request)
-        db_audit = SessionLocal()
-        try:
-            registrar_log_auditoria(
-                db_audit, "SUPER_ADMIN", "SUPERADMIN_LOGIN_FALLO",
-                f"ip={client_ip},intento=1"
-            )
-            db_audit.commit()
-        except Exception:
-            logger.exception("AUDIT LOGIN FALLO")
-        finally:
-            db_audit.close()
+        _registrar_log_superadmin_seguro(
+            "SUPERADMIN_LOGIN_FALLO",
+            f"ip={client_ip},intento=1",
+        )
 
         # Sleep aleatorio 200-400ms para tiempo constante + jitter
         await asyncio.sleep(random.uniform(0.2, 0.4))
@@ -136,17 +164,10 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
             totp = pyotp.TOTP(totp_secret)
             if not totp.verify(payload.totp_code):
                 logger.warning("AUTH LOGIN: TOTP inválido")
-                db_audit = SessionLocal()
-                try:
-                    registrar_log_auditoria(
-                        db_audit, "SUPER_ADMIN", "SUPERADMIN_LOGIN_FALLO",
-                        f"ip={_get_client_ip(request)},intento=1,motivo=TOTP_invalido"
-                    )
-                    db_audit.commit()
-                except Exception:
-                    logger.exception("AUDIT TOTP FALLO")
-                finally:
-                    db_audit.close()
+                _registrar_log_superadmin_seguro(
+                    "SUPERADMIN_LOGIN_FALLO",
+                    f"ip={_get_client_ip(request)},intento=1,motivo=TOTP_invalido",
+                )
 
                 await asyncio.sleep(random.uniform(0.2, 0.4))
                 raise HTTPException(
@@ -213,17 +234,10 @@ async def login_superadmin(request: Request, response: Response, payload: LoginR
     )
 
     # 8. T-317: Audit trail de login exitoso
-    db_audit = SessionLocal()
-    try:
-        registrar_log_auditoria(
-            db_audit, "SUPER_ADMIN", "SUPERADMIN_LOGIN_OK",
-            f"ip={_get_client_ip(request)}"
-        )
-        db_audit.commit()
-    except Exception:
-        logger.exception("AUDIT LOGIN OK")
-    finally:
-        db_audit.close()
+    _registrar_log_superadmin_seguro(
+        "SUPERADMIN_LOGIN_OK",
+        f"ip={_get_client_ip(request)}",
+    )
 
     # 9. Redirect 303 (See Other) para que el navegador procese las cookies antes de navegar
     # Las cookies ya están en la response, el 303 hace que el navegador las persista
@@ -390,17 +404,10 @@ async def logout(request: Request, response: Response):
         )
 
     # T-317: Audit trail de logout
-    db_audit = SessionLocal()
-    try:
-        registrar_log_auditoria(
-            db_audit, "SUPER_ADMIN", "SUPERADMIN_LOGOUT",
-            f"session_id={session_id[:16] if session_id else 'none'}"
-        )
-        db_audit.commit()
-    except Exception:
-        logger.exception("AUDIT LOGOUT")
-    finally:
-        db_audit.close()
+    _registrar_log_superadmin_seguro(
+        "SUPERADMIN_LOGOUT",
+        f"session_id={session_id[:16] if session_id else 'none'}",
+    )
 
     return {"ok": True, "message": "Sesion cerrada"}
 
@@ -454,17 +461,10 @@ async def request_password_reset(request: Request, payload: RequestResetRequest)
             logger.error("PASSWORD_RESET_REQUEST | email_fallo_envio")
 
         # T-315: Audit trail
-        db_audit = SessionLocal()
-        try:
-            registrar_log_auditoria(
-                db_audit, "SUPER_ADMIN", "PASSWORD_RESET_SOLICITADO",
-                f"email={email[:3]}***"
-            )
-            db_audit.commit()
-        except Exception:
-            logger.exception("AUDIT PASSWORD_RESET_SOLICITADO")
-        finally:
-            db_audit.close()
+        _registrar_log_superadmin_seguro(
+            "PASSWORD_RESET_SOLICITADO",
+            f"email={email[:3]}***",
+        )
     except Exception as e:
         logger.exception("PASSWORD_RESET_REQUEST | error=%s", e)
     finally:
@@ -528,17 +528,10 @@ async def reset_password(request: Request, payload: ResetPasswordRequest):
             logger.error("PASSWORD_RESET_EXECUTE | error_invalidando_sesiones: %s", e)
 
         # T-315: Audit trail PASSWORD_RESET_APLICADO
-        db_audit = SessionLocal()
-        try:
-            registrar_log_auditoria(
-                db_audit, "SUPER_ADMIN", "PASSWORD_RESET_APLICADO",
-                f"email={email[:3]}***"
-            )
-            db_audit.commit()
-        except Exception:
-            logger.exception("AUDIT PASSWORD_RESET_APLICADO")
-        finally:
-            db_audit.close()
+        _registrar_log_superadmin_seguro(
+            "PASSWORD_RESET_APLICADO",
+            f"email={email[:3]}***",
+        )
 
         return {
             "ok": True,
