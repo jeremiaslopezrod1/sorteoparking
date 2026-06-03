@@ -561,7 +561,24 @@ async def reset_password(request: Request, payload: ResetPasswordRequest):
 
 # ── T-315: SUPERADMIN PASSWORD RESET (paths exactos del SDD) ──
 
-superadmin_reset_router = APIRouter(prefix="", tags=["superadmin-reset"])
+superadmin_reset_router = APIRouter(prefix="/auth", tags=["superadmin-reset"])
 
 
-@superadmin_reset_router.post("/superadmin/recuperar-password", status_code=statu
+@superadmin_reset_router.post("/superadmin/recuperar-password", status_code=status.HTTP_200_OK)
+@limiter.limit("3/15minutes")
+async def recuperar_password_superadmin(request: Request, payload: RecuperarPasswordIn):
+    """Solicita recuperación de contraseña SUPER_ADMIN por el path exacto del SDD."""
+    return await request_password_reset(
+        request,
+        RequestResetRequest(email=payload.email),
+    )
+
+
+@superadmin_reset_router.post("/superadmin/reset-password", status_code=status.HTTP_200_OK)
+@limiter.limit("5/15minutes")
+async def reset_password_superadmin(request: Request, payload: ResetPasswordIn):
+    """Restablece contraseña SUPER_ADMIN por el path exacto del SDD."""
+    return await reset_password(
+        request,
+        ResetPasswordRequest(token=payload.token, new_password=payload.new_password),
+    )
