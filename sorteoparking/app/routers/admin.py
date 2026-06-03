@@ -1,11 +1,14 @@
 from datetime import datetime
 import hashlib
+import logging
 import os
 import hmac
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import super_admin_config, public_urls_config
@@ -17,6 +20,9 @@ from app.models.catalogo import Zona, Torre, Parqueadero
 from app.models.log import LogAuditoria
 from app.services.email_service import enviar_correo_texto
 from app.services.log_service import registrar_log_auditoria
+
+
+logger = logging.getLogger(__name__)
 
 
 def _super_admin_bearer(request: Request):
@@ -346,12 +352,26 @@ def rotar_token(tenant_id: str, db: Session = Depends(get_db)) -> dict[str, str]
 
 @router.get("/metricas")
 def metricas_globales(db: Session = Depends(get_db)) -> dict[str, object]:
-    total_tenants = db.query(Tenant).limit(10000).count()
-    activos = db.query(Tenant).filter(Tenant.estado == "ACTIVO").limit(10000).count()
-    sorteos_totales = db.query(Sorteo).limit(100000).count()
-    sorteos_completados = db.query(Sorteo).filter(Sorteo.estado == "COMPLETADO").count()
-    sorteos_en_curso = db.query(Sorteo).filter(Sorteo.estado.in_(("EN_CURSO", "LISTO", "EJECUTANDO"))).count()
-    logs_totales = db.query(LogAuditoria).limit(100000).count()
+    try:
+        total_tenants = db.query(func.count(Tenant.id)).scalar() or 0
+        activos = db.query(func.count(Tenant.id)).filter(Tenant.estado == "ACTIVO").scalar() or 0
+        sorteos_totales = db.query(func.count(Sorteo.id)).scalar() or 0
+        sorteos_completados = db.query(func.count(Sorteo.id)).filter(Sorteo.estado == "COMPLETADO").scalar() or 0
+        sorteos_en_curso = (
+            db.query(func.count(Sorteo.id))
+            .filter(Sorteo.estado.in_(("EN_CURSO", "LISTO", "EJECUTANDO")))
+            .scalar()
+            or 0
+        )
+        logs_totales = db.query(func.count(LogAuditoria.id)).scalar() or 0
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("ADMIN_METRICAS_DB_ERROR | No se pudieron calcular las metricas globales")
+        raise HTTPException(
+            status_code=500,
+            detail="No fue posible calcular las metricas globales. Revisar logs del servidor.",
+        ) from exc
+
     return {
         "tenants": {"total": total_tenants, "activos": activos},
         "sorteos": {"total": sorteos_totales, "completados": sorteos_completados, "en_curso": sorteos_en_curso},

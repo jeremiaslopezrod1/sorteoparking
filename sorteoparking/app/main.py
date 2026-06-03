@@ -49,15 +49,23 @@ async def tenant_auth_middleware(request: Request, call_next):
     if request.url.path == "/favicon.ico":
         return Response(status_code=204)
 
-    try:
-        if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/debug/"):
-            request.state.tenant_id = None
+    if request.url.path.startswith("/auth/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/debug/"):
+        request.state.tenant_id = None
+        try:
             response = await call_next(request)
-            if response.status_code >= 400:
-                response.headers["X-Auth-Path"] = "admin_router"
-                response.headers["X-Auth-Status"] = str(response.status_code)
-            return response
-            
+        except Exception as exc:
+            logger.exception(
+                "ADMIN_ROUTE_ERROR | path=%s | method=%s | exc_type=%s",
+                request.url.path, request.method, type(exc).__name__
+            )
+            raise
+
+        if response.status_code >= 400:
+            response.headers["X-Auth-Path"] = "admin_router"
+            response.headers["X-Auth-Status"] = str(response.status_code)
+        return response
+
+    try:
         auth_ctx = get_auth_context(request)
         request.state.tenant_id = auth_ctx.tenant_id
     except Exception as exc:
