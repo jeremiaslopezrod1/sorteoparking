@@ -16,7 +16,15 @@ class AuthContext:
     tenant_id: str
 
 
+PROTECTED_PATHS: tuple[str, ...] = (
+    "/static/dashboard.html",
+)
+
+
 def _is_public_path(path: str) -> bool:
+    # Protected paths need auth even though they start with /static/
+    if path in PROTECTED_PATHS:
+        return False
     return path.startswith(security_config.public_path_prefixes) or path.startswith("/static/") or path in (
         "/health",
     )

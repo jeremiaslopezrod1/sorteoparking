@@ -234,6 +234,9 @@ Ver el [`SDD_v2.1_SorteoParking.md`](SDD_v2.1_SorteoParking.md) para la especifi
 
 **v2.1 completada — 100% de las tareas implementadas.**
 
+> **4 Jun 2026:** Fix accesos a paneles — `/static/dashboard.html` ya no es tratado como ruta pública.
+> La protección server-side ahora funciona correctamente (401 sin Bearer token válido).
+
 | Bloque | Tareas | Estado |
 |---|---|---|
 | A — Bugs críticos | T-301 a T-303 | ✅ |
@@ -278,7 +281,7 @@ SUPER_ADMIN_TOKEN=<generado por create_superadmin --env-only>
 1. Abrir `http://127.0.0.1:8000/static/index.html` — landing page
 2. Hacer clic en **Acceder** → ir a `login.html`
 3. Ingresar UUID del conjunto (generado desde `superadmin.html`)
-4. O entrar directamente a `superadmin.html` con usuario/contraseña
+4. `login_superadmin.html` → usuario/contraseña → redirect a `superadmin.html`
 
 ---
 
