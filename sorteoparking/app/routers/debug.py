@@ -10,16 +10,15 @@
 import logging
 import os
 import secrets
-import smtplib
 import traceback
 from datetime import datetime, timedelta, timezone
-from email.mime.text import MIMEText
 from urllib.parse import urlparse, urlunparse
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
-from app.core.config import email_config, super_admin_config
+from app.core.config import super_admin_config
+from app.core.security import verify_super_admin
 from app.core.session_store import AdminSession
 from app.db.database import DATABASE_URL, SessionLocal
 from app.models.password_reset import SuperAdminCredentials
@@ -200,7 +199,7 @@ def debug_engines():
 #  /debug/session-test — INSERT + COMMIT + SELECT
 # ──────────────────────────────────────────────
 @router.post("/session-test")
-def session_test():
+def session_test(_sa=Depends(verify_super_admin)):
     """INSERT + COMMIT + SELECT — ¿persiste el row en la BD?"""
     db = None
     try:
@@ -268,132 +267,3 @@ def session_test():
             db.close()
 
 
-# ──────────────────────────────────────────────
-#  /debug/send-report — informe por correo
-# ──────────────────────────────────────────────
-@router.post("/send-report")
-def send_report():
-    """Envía informe completo de diagnóstico por correo."""
-    reporte = """Asunto: SorteoParking — Informe de diagnostico PostgreSQL + Sesiones
-
-Hola Michael,
-
-INFORME COMPLETO DE DIAGNOSTICO
-===============================
-
-CAMBIOS APLICADOS (2026-05-23):
-- session_store.py: usa el MISMO engine que la app (sin duplicar pools)
-- main.py: FAIL-FAST real (si DB falla, la app NO arranca)
-- database.py: logs DB CONNECT START/OK/FAIL
-- debug.py: nuevos endpoints /debug/db-url, /debug/db-connect, /debug/admin-check, /debug/engines
-
-PROBLEMA RAIZ:
-El PostgreSQL de Render NO es accesible desde la app.
-SSL connection has been closed unexpectedly.
-
-Esto NO es un problema de código.
-Es un problema de infraestructura PostgreSQL en Render.
-
-ACCIONES PENDIENTES:
-1. Revisar estado de la instancia PostgreSQL en dashboard.render.com
-2. Si fue suspendida (free tier 90 días), reactivar o crear nueva
-3. Unificar región de app y DB (ambas en Ohio o ambas en Oregon)
-4. Si PostgreSQL se reactiva, probar GET /debug/db-connect y /debug/db-ping
-
---
-Jarvis"""
-
-    host = email_config.smtp_host
-    port = email_config.smtp_port
-    user = email_config.smtp_user
-    password = email_config.smtp_password
-    from_addr = email_config.smtp_from or user
-
-    if not host or not from_addr:
-        return {"ok": False, "error": "SMTP no configurado (faltan host o from)"}
-
-    destino = "pruebaalisocajica@gmail.com"
-    asunto = "SorteoParking — Informe diagnostico PostgreSQL + Sesiones"
-
-    msg = MIMEText(reporte, "plain", "utf-8")
-    msg["Subject"] = asunto
-    msg["From"] = from_addr
-    msg["To"] = destino
-
-    try:
-        with smtplib.SMTP_SSL(host, 465, timeout=30) as smtp:
-            if user and password:
-                smtp.login(user, password)
-            smtp.sendmail(from_addr, [destino], msg.as_string())
-        logger.warning("REPORT enviado a %s", destino)
-        return {"ok": True, "sent_to": destino}
-    except Exception as e:
-        logger.error("REPORT send failed: %s", e)
-        return {
-            "ok": False,
-            "error": str(e),
-            "smtp_host": host,
-            "smtp_port": port,
-            "from": from_addr,
-        }
-
-
-# ──────────────────────────────────────────────
-#  /debug/reset-admin-password — TEMPORAL
-#  Restablece la contraseña del SuperAdmin.
-#  ELIMINAR después de usar.
-# ──────────────────────────────────────────────
-@router.post("/reset-admin-password")
-def reset_admin_password():
-    """[TEMPORAL] Restablece contraseña del admin Michael a Admin2026!"""
-    from argon2 import PasswordHasher
-
-    logger.warning("ADMIN RESET START")
-
-    username = "Michael"
-    new_password = "Admin2026!"
-    email = "pruebaalisocajica@gmail.com"
-
-    db = None
-    try:
-        # Mismo PasswordHasher que auth.py (defaults: time_cost=3, memory_cost=65536, parallelism=4)
-        ph = PasswordHasher()
-        new_hash = ph.hash(new_password)
-        logger.warning("ADMIN RESET hash_generado | username=%s", username)
-
-        db = SessionLocal()
-
-        # Guardar en BD (superadmin_credentials — login lo lee de aquí primero)
-        SuperAdminCredentials.guardar_o_actualizar(email, new_hash, db)
-        logger.warning("ADMIN RESET credenciales_guardadas_en_bd")
-
-        # Invalidar TODAS las sesiones activas
-        revoked = db.query(AdminSession).filter(
-            AdminSession.revoked_at.is_(None)
-        ).update({"revoked_at": datetime.now(timezone.utc)})
-        db.commit()
-        logger.warning("ADMIN RESET sesiones_invalidadas=%d", revoked)
-
-        logger.warning("ADMIN RESET OK | username=%s | email=%s", username, email)
-
-        return {
-            "ok": True,
-            "username": username,
-            "message": "Contraseña restablecida. Usa Admin2026! para ingresar."
-        }
-
-    except Exception as e:
-        logger.error("ADMIN RESET FAILED | error=%s", e)
-        if db:
-            try:
-                db.rollback()
-            except Exception:
-                pass
-        return {
-            "ok": False,
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-        }
-    finally:
-        if db:
-            db.close()

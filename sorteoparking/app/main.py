@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.security import get_auth_context, get_super_admin_from_cookie
 from app.db.database import Base, SessionLocal, engine, configurar_sqlite_wal, verificar_conexion_postgresql
-from app.routers import admin, auth, catalogo as catalogo_router, debug, publico, sorteos
+from app.routers import admin, auth, catalogo as catalogo_router, publico, sorteos
 from app.routers.auth import superadmin_reset_router
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -209,7 +209,12 @@ def health():
     }
 
 
-app.include_router(debug.router)
+# debug solo en desarrollo — nunca en produccion
+from app.core.config import deploy_config
+if deploy_config.app_env in ("local", "development"):
+    from app.routers import debug as debug_router
+    app.include_router(debug_router.router)
+
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(catalogo_router.router)
