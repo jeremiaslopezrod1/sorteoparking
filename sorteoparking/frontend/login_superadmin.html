@@ -143,6 +143,13 @@
           body: JSON.stringify(body),
           redirect: 'follow',  // Sigue automáticamente el 303 redirect
         });
+
+        console.log('FETCH RESULT:', {
+          status: res.status,
+          ok: res.ok,
+          url: res.url,
+          redirected: res.redirected
+        });
         
         // Si el fetch sigue el redirect (status 303), el navegador navega automáticamente
         // Si no (error antes del redirect), mostramos el error
