@@ -820,14 +820,14 @@ def confirmar_otp(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP ya utilizado — no se puede reutilizar")
 
     # SDD §6.4 — Verificar expiración
-    if ses.estado == "PENDIENTE" and datetime.now(timezone.utc) > ses.expira_en:
+    if ses.estado == "PENDIENTE" and datetime.now(timezone.utc) > ses.expira_en.replace(tzinfo=timezone.utc):
 
         ses.estado = "EXPIRADO"
 
         db.commit()
 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expirado")
-    elif datetime.now(timezone.utc) > ses.expira_en:
+    elif datetime.now(timezone.utc) > ses.expira_en.replace(tzinfo=timezone.utc):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expirado")
 
     # SDD §6.4 — Límite de 3 intentos
