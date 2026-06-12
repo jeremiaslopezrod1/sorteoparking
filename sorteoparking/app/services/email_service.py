@@ -1,44 +1,59 @@
-"""Envio de correos via SMTP nativo de Python. Solución pragmática MVP."""
-import os
-import smtplib
-from email.message import EmailMessage
+"""Envio de correos via Brevo API. Solución gratuita y sin restricciones de destinatario."""
+import json
 import logging
+import os
+import urllib.request
+import urllib.error
 
 logger = logging.getLogger(__name__)
 
 def enviar_correo_texto(destino: str, asunto: str, cuerpo: str) -> bool:
-    """Envía un correo en texto plano usando SMTP nativo (ej. Gmail)."""
+    """Envía un correo en texto plano via Brevo API (HTTPS, puerto 443)."""
     
-    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
+    api_key = os.getenv("BREVO_API_KEY")
+    remitente_email = os.getenv("BREVO_SENDER_EMAIL", "tu_correo@gmail.com")
+    remitente_nombre = os.getenv("BREVO_SENDER_NAME", "SorteoParking")
 
-    if not smtp_user or not smtp_pass:
-        logger.error("SMTP_ERROR: Faltan credenciales SMTP_USER o SMTP_PASS en variables de entorno")
+    if not api_key:
+        logger.error("BREVO_ERROR: Falta la variable de entorno BREVO_API_KEY")
         return False
 
-    # CORRECCIÓN: Se agregaron los paréntesis () aquí
-    msg = EmailMessage()
-    msg.set_content(cuerpo)
-    msg["Subject"] = asunto
-    msg["From"] = smtp_user
-    msg["To"] = destino
+    url = "https://api.brevo.com/v3/smtp/email"
+    
+    payload = {
+        "sender": {"name": remitente_nombre, "email": remitente_email},
+        "to": [{"email": destino}],
+        "subject": asunto,
+        "htmlContent": f"<pre style='font-family: system-ui, sans-serif; white-space: pre-wrap;'>{cuerpo}</pre>"
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+    )
 
     try:
-        logger.info("SMTP_SEND_START | destino=%s", destino)
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()  # Cifra la conexión
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        logger.info("SMTP_SEND_OK | destino=%s", destino)
-        return True
+        logger.info("BREVO_SEND_START | destino=%s", destino)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            logger.info("BREVO_SEND_OK | destino=%s | status=%d", destino, response.status)
+            return True
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        logger.error("BREVO_SEND_HTTP_ERROR | destino=%s | status=%d | body=%s", destino, e.code, error_body)
+        return False
     except Exception as e:
-        logger.exception("SMTP_SEND_ERROR | destino=%s | error=%s", destino, str(e))
+        logger.exception("BREVO_SEND_ERROR | destino=%s | error=%s", destino, str(e))
         return False
 
 def enviar_reset_password(destino: str, reset_url: str) -> bool:
-    """Wrapper para mantener compatibilidad con el resto del código."""
+    """Wrapper para mantener compatibilidad con el flujo de recuperación de contraseña."""
     asunto = "SorteoParking — Recuperación de contraseña"
     cuerpo = f"""Hola,
 
