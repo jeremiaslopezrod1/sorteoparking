@@ -375,6 +375,18 @@
       }
       return null;
     }
+    // ── FUNCIÓN DE SANITIZACIÓN DOM (SDD §10.6) ──
+    function escHtml(texto) {
+      if (typeof texto !== 'string') return texto || '';
+      return texto
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+// ── T-312 + Login flow: read UUID from URL param OR sessionStorage ──
 
     // ── T-312 + Login flow: read UUID from URL param OR sessionStorage ──
     (function() {
