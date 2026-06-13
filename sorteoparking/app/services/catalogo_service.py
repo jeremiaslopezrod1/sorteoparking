@@ -45,10 +45,14 @@ def cargar_catalogo_desde_excel(db: Session, tenant_id: str, archivo_bytes: byte
         logger.warning("Parser IA fallo, usando metodo legacy: %s", str(e))
 
     # Fallback: método legacy (catalogo con hoja "CATALOGO" header=3)
+    # Fallback: método legacy (catalogo con hoja "CATALOGO" header=3)
     try:
         df = pd.read_excel(BytesIO(archivo_bytes), sheet_name="CATALOGO", header=3)
     except Exception:
-        df = pd.read_csv(BytesIO(archivo_bytes))
+        try:
+            df = pd.read_excel(BytesIO(archivo_bytes), engine="openpyxl")
+        except Exception:
+            df = pd.read_csv(BytesIO(archivo_bytes))
 
     df = df[~df["numero"].astype(str).str.startswith("TOTAL")]
     df = df.dropna(subset=["numero"])
